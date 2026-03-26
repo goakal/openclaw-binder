@@ -1,0 +1,37 @@
+{
+  "name": "@openclaw/binder",
+  "version": "2026.3.24",
+  "private": true,
+  "description": "OpenClaw Binder channel plugin",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "binder",
+      "label": "Binder",
+      "selectionLabel": "Binder (webhook)",
+      "detailLabel": "Binder",
+      "docsPath": "/channels/binder",
+      "docsLabel": "binder",
+      "blurb": "Binder group chat via @mention webhooks.",
+      "aliases": [
+        "bindr"
+      ],
+      "order": 80
+    },
+    "install": {
+      "localPath": "extensions/binder",
+      "defaultChoice": "local"
+    }
+  }
+}

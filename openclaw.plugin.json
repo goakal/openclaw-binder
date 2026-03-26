@@ -1,0 +1,12 @@
+{
+  "id": "binder",
+  "name": "Binder",
+  "description": "OpenClaw Binder channel plugin",
+  "channels": ["binder"],
+  "version": "2026.3.24",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
