@@ -11,8 +11,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Extract version from tag
         id: version
@@ -20,14 +22,19 @@ jobs:
 
       - name: Update version in files
         run: |
-          sed -i "s/\"version\": \".*\"/\"version\": \"${{ steps.version.outputs.version }}\"/" package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"${{ steps.version.outputs.version }}\"/" openclaw.plugin.json
+          jq '.version = "${{ steps.version.outputs.version }}"' package.json > tmp.json && mv tmp.json package.json
+          jq '.version = "${{ steps.version.outputs.version }}"' openclaw.plugin.json > tmp.json && mv tmp.json openclaw.plugin.json
 
-      - name: Create archive
-        run: tar czf binder.tgz --exclude='.git' --exclude='.github' .
+      - name: Create archive (stable, minimal)
+        run: |
+          tar czf binder-${{ steps.version.outputs.version }}.tgz \
+            package.json \
+            openclaw.plugin.json \
+            index.ts \
+            src/
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: binder.tgz
+          files: binder-${{ steps.version.outputs.version }}.tgz
           generate_release_notes: true
