@@ -11,7 +11,7 @@ import {
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/googlechat";
 import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/core";
 import type { ResolvedBinderAccount } from "./accounts.js";
-import { postBinderMessage } from "./api.js";
+import { postBinderMessage, addBinderReaction, removeBinderReaction } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 
 export type BinderRuntimeEnv = {
@@ -193,91 +193,101 @@ async function processBinderEvent(
     return;
   }
 
-  const core = getBinderRuntime();
+  await addBinderReaction(account, data.message_id, "👀");
 
-  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
-    cfg: config,
-    channel: "binder",
-    accountId: account.accountId,
-    peer: { kind: "group" as const, id: groupId },
-    runtime: core.channel,
-    sessionStore: config.session?.store,
-  });
+  try {
+    const core = getBinderRuntime();
 
-  const { storePath, body } = buildEnvelope({
-    channel: "Binderr",
-    from: data.sender.name || `user:${data.sender.id}`,
-    timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
-    body: cleanBody,
-  });
-
-  const ctxPayload = core.channel.reply.finalizeInboundContext({
-    Body: body,
-    BodyForAgent: cleanBody,
-    RawBody: rawBody,
-    CommandBody: cleanBody,
-    From: `binderr:${data.sender.id}`,
-    To: `binderr:${groupId}`,
-    SessionKey: route.sessionKey,
-    AccountId: route.accountId,
-    ChatType: "channel",
-    ConversationLabel: `Binderr group ${groupId}`,
-    SenderName: data.sender.name || undefined,
-    SenderId: data.sender.id,
-    SenderUsername: data.sender.username ?? undefined,
-    WasMentioned: true,
-    Provider: "binderr",
-    Surface: "binder",
-    MessageSid: data.message_id,
-    ReplyToId: data.parent_message_id,
-    MessageThreadId: data.thread_id ?? undefined,
-    OriginatingChannel: "binder",
-    OriginatingTo: `binderr:${groupId}`,
-  });
-
-  void core.channel.session
-    .recordSessionMetaFromInbound({
-      storePath,
-      sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
-      ctx: ctxPayload,
-    })
-    .catch((err) => {
-      runtime.error?.(`binder: failed updating session meta: ${String(err)}`);
+    const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
+      cfg: config,
+      channel: "binder",
+      accountId: account.accountId,
+      peer: { kind: "group" as const, id: groupId },
+      runtime: core.channel,
+      sessionStore: config.session?.store,
     });
 
-  const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
-    cfg: config,
-    agentId: route.agentId,
-    channel: "binder",
-    accountId: route.accountId,
-  });
+    const { storePath, body } = buildEnvelope({
+      channel: "Binderr",
+      from: data.sender.name || `user:${data.sender.id}`,
+      timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      body: cleanBody,
+    });
 
-  const parentMessageId = data.parent_message_id;
+    const ctxPayload = core.channel.reply.finalizeInboundContext({
+      Body: body,
+      BodyForAgent: cleanBody,
+      RawBody: rawBody,
+      CommandBody: cleanBody,
+      From: `binderr:${data.sender.id}`,
+      To: `binderr:${groupId}`,
+      SessionKey: route.sessionKey,
+      AccountId: route.accountId,
+      ChatType: "channel",
+      ConversationLabel: `Binderr group ${groupId}`,
+      SenderName: data.sender.name || undefined,
+      SenderId: data.sender.id,
+      SenderUsername: data.sender.username ?? undefined,
+      WasMentioned: true,
+      Provider: "binderr",
+      Surface: "binder",
+      MessageSid: data.message_id,
+      ReplyToId: data.parent_message_id,
+      MessageThreadId: data.thread_id ?? undefined,
+      OriginatingChannel: "binder",
+      OriginatingTo: `binderr:${groupId}`,
+    });
 
-  await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-    ctx: ctxPayload,
-    cfg: config,
-    dispatcherOptions: {
-      ...prefixOptions,
-      deliver: async (payload) => {
-        await postBinderMessage({
-          account,
-          groupId,
-          parentMessageId,
-          content: payload.text,
-        });
-        target.statusSink?.({ lastOutboundAt: Date.now() });
+    void core.channel.session
+      .recordSessionMetaFromInbound({
+        storePath,
+        sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+        ctx: ctxPayload,
+      })
+      .catch((err) => {
+        runtime.error?.(`binder: failed updating session meta: ${String(err)}`);
+      });
+
+    const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
+      cfg: config,
+      agentId: route.agentId,
+      channel: "binder",
+      accountId: route.accountId,
+    });
+
+    const parentMessageId = data.parent_message_id;
+
+    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: ctxPayload,
+      cfg: config,
+      dispatcherOptions: {
+        ...prefixOptions,
+        deliver: async (payload) => {
+          await postBinderMessage({
+            account,
+            groupId,
+            parentMessageId,
+            content: payload.text,
+          });
+          target.statusSink?.({ lastOutboundAt: Date.now() });
+        },
+        onError: (err, info) => {
+          runtime.error?.(
+            `[${account.accountId}] Binderr ${info.kind} reply failed: ${String(err)}`,
+          );
+        },
       },
-      onError: (err, info) => {
-        runtime.error?.(
-          `[${account.accountId}] Binderr ${info.kind} reply failed: ${String(err)}`,
-        );
+      replyOptions: {
+        onModelSelected,
       },
-    },
-    replyOptions: {
-      onModelSelected,
-    },
-  });
+    });
+
+    await removeBinderReaction(account, data.message_id);
+    await addBinderReaction(account, data.message_id, "✅");
+  } catch (err) {
+    await removeBinderReaction(account, data.message_id);
+    throw err;
+  }
 }
 
 export function monitorBinderProvider(options: BinderMonitorOptions): () => void {

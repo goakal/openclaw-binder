@@ -1,5 +1,13 @@
 import type { ResolvedBinderAccount } from "./accounts.js";
 
+function botHeaders(account: ResolvedBinderAccount) {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${account.config.token}`,
+    "X-Bot-ID": account.config.botId,
+  };
+}
+
 export async function postBinderMessage(params: {
   account: ResolvedBinderAccount;
   groupId: string;
@@ -11,11 +19,7 @@ export async function postBinderMessage(params: {
 
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${account.config.token}`,
-      "X-Bot-ID": account.config.botId,
-    },
+    headers: botHeaders(account),
     body: JSON.stringify({
       group_id: groupId,
       parent_message_id: parentMessageId,
@@ -27,6 +31,30 @@ export async function postBinderMessage(params: {
     const body = await res.text().catch(() => "");
     throw new Error(`Binderr API error ${res.status}: ${body}`);
   }
+}
+
+export async function addBinderReaction(
+  account: ResolvedBinderAccount,
+  messageId: string,
+  emoji: string,
+): Promise<void> {
+  const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages/${messageId}/reactions`;
+  await fetch(url, {
+    method: "POST",
+    headers: botHeaders(account),
+    body: JSON.stringify({ emoji }),
+  }).catch(() => {});
+}
+
+export async function removeBinderReaction(
+  account: ResolvedBinderAccount,
+  messageId: string,
+): Promise<void> {
+  const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages/${messageId}/reactions`;
+  await fetch(url, {
+    method: "DELETE",
+    headers: botHeaders(account),
+  }).catch(() => {});
 }
 
 /**
