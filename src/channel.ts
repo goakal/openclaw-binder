@@ -3,7 +3,7 @@ import { createAccountStatusSink } from "openclaw/plugin-sdk/channel-lifecycle";
 import { createScopedChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { getChatChannelMeta } from "openclaw/plugin-sdk/core";
-import { runPassiveAccountLifecycle } from "openclaw/plugin-sdk/gateway-runtime";
+import { runPassiveAccountLifecycle } from "openclaw/plugin-sdk/channel-lifecycle";
 import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import {
