@@ -1,5 +1,5 @@
 import { buildComputedAccountStatusSnapshot } from "openclaw/plugin-sdk/status-helpers";
-import { createAccountStatusSink } from "openclaw/plugin-sdk/gateway-runtime";
+import { createAccountStatusSink } from "openclaw/plugin-sdk/channel-lifecycle";
 import { createScopedChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { getChatChannelMeta } from "openclaw/plugin-sdk/core";
