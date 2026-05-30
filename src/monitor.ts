@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-runtime";
+import { createReplyPrefixOptions } from "openclaw/plugin-sdk/reply-runtime";
 import {
   createWebhookInFlightLimiter,
   readWebhookBodyOrReject,
@@ -8,8 +8,9 @@ import {
   resolveWebhookPath,
   withResolvedWebhookRequestPipeline,
 } from "openclaw/plugin-sdk/webhook-ingress";
-import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/googlechat";
-import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/core";
+import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import type { ResolvedBinderAccount } from "./accounts.js";
 import { postBinderMessage } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
@@ -133,7 +134,7 @@ async function handleBinderWebhookRequest(
       }
 
       const target = targets.find((t) =>
-        verifyBinderSignature(rawBody, signatureHeader, t.account.config.webhookSecret),
+        verifyBinderSignature(rawBody, signatureHeader, t.account.config.token),
       );
 
       if (!target) {

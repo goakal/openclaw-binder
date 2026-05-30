@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "index.ts",
+    "setup-entry.ts",
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

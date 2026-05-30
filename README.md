@@ -32,7 +32,6 @@ openclaw config set channels.binder.enabled true
 openclaw config set channels.binder.accounts.default.apiUrl "https://your-binderr.com"
 openclaw config set channels.binder.accounts.default.botId "BOT_ID"
 openclaw config set channels.binder.accounts.default.token "BOT_TOKEN"
-openclaw config set channels.binder.accounts.default.webhookSecret "WEBHOOK_SECRET"
 openclaw config set channels.binder.accounts.default.botUsername "openclaw"
 openclaw config set channels.binder.accounts.default.webhookPath "/binder"
 
@@ -45,8 +44,7 @@ openclaw gateway restart
 |---|---|
 | `apiUrl` | Your Binderr instance URL |
 | `botId` | Bot ID from Binderr (`POST /api/bots/v1` response) |
-| `token` | Bot bearer token (shown once on creation) |
-| `webhookSecret` | `BOT_WEBHOOK_SECRET` env var or bot's `tokenHash` |
+| `token` | Bot bearer token (shown once on creation). Also used to verify inbound webhook signatures. |
 | `botUsername` | Bot's @handle without the `@` |
 | `webhookPath` | Webhook endpoint path (default: `/binder`) |
 
@@ -68,5 +66,5 @@ Then test by typing `@openclaw hello` in a Binderr group chat.
 
 ## Requirements
 
-- OpenClaw >= 2026.3.24
+- OpenClaw >= 2026.5.6
 - Binderr backend with bot API enabled

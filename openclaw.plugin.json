@@ -1,12 +1,40 @@
 {
   "id": "binder",
-  "name": "Binder",
-  "description": "OpenClaw Binder channel plugin",
+  "kind": "channel",
   "channels": ["binder"],
-  "version": "2026.3.24",
+  "name": "Binder",
+  "description": "OpenClaw Binder channel plugin — respond to @mentions in Binder groups",
+  "version": "2026.5.6",
+  "contracts": {
+    "channels": ["binder"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {}
+  },
+  "channelConfigs": {
+    "binder": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "name": { "type": "string" },
+          "apiUrl": { "type": "string" },
+          "botId": { "type": "string" },
+          "token": { "type": "string" },
+          "botUsername": { "type": "string" },
+          "webhookPath": { "type": "string" },
+          "defaultTo": { "type": "string" }
+        }
+      },
+      "uiHints": {
+        "token": {
+          "label": "Bot token",
+          "sensitive": true
+        }
+      }
+    }
   }
 }

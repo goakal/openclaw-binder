@@ -1,6 +1,6 @@
 import { createAccountListHelpers } from "openclaw/plugin-sdk/account-helpers";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { BinderAccountConfig } from "./types.config.js";
 
 export type ResolvedBinderAccount = {

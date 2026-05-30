@@ -1,10 +1,11 @@
 import { buildComputedAccountStatusSnapshot } from "openclaw/plugin-sdk/status-helpers";
-import { createAccountStatusSink } from "openclaw/plugin-sdk/channel-lifecycle";
+import { createAccountStatusSink } from "openclaw/plugin-sdk/gateway-runtime";
 import { createScopedChannelConfigBase } from "openclaw/plugin-sdk/channel-config-helpers";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { getChatChannelMeta } from "openclaw/plugin-sdk/core";
-import { runPassiveAccountLifecycle } from "openclaw/plugin-sdk/channel-lifecycle";
-import type { ChannelPlugin, OpenClawConfig } from "openclaw/plugin-sdk/core";
+import { runPassiveAccountLifecycle } from "openclaw/plugin-sdk/gateway-runtime";
+import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-core";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import {
   listBinderAccountIds,
   resolveBinderAccount,
@@ -24,7 +25,7 @@ const binderConfigBase = createScopedChannelConfigBase<ResolvedBinderAccount>({
   listAccountIds: listBinderAccountIds,
   resolveAccount: (cfg, accountId) => resolveBinderAccount({ cfg, accountId }),
   defaultAccountId: resolveDefaultBinderAccountId,
-  clearBaseFields: ["apiUrl", "botId", "token", "webhookSecret", "botUsername", "webhookPath"],
+  clearBaseFields: ["apiUrl", "botId", "token", "botUsername", "webhookPath"],
 });
 
 export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
@@ -46,7 +47,6 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         account.config.apiUrl?.trim() &&
           account.config.botId?.trim() &&
           account.config.token?.trim() &&
-          account.config.webhookSecret?.trim() &&
           account.config.botUsername?.trim(),
       ),
     describeAccount: (account) => ({
@@ -71,13 +71,11 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         apiUrl?: string;
         botId?: string;
         token?: string;
-        webhookSecret?: string;
         botUsername?: string;
       };
       if (!i.apiUrl?.trim()) return "Binder requires --api-url (e.g. https://binderr.example.com)";
       if (!i.botId?.trim()) return "Binder requires --bot-id";
       if (!i.token?.trim()) return "Binder requires --token (bearer token)";
-      if (!i.webhookSecret?.trim()) return "Binder requires --webhook-secret";
       if (!i.botUsername?.trim()) return "Binder requires --bot-username (the bot's @handle)";
       return null;
     },
@@ -86,7 +84,6 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         apiUrl?: string;
         botId?: string;
         token?: string;
-        webhookSecret?: string;
         botUsername?: string;
         webhookPath?: string;
         name?: string;
@@ -98,7 +95,6 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       if (i.apiUrl?.trim()) patch["apiUrl"] = i.apiUrl.trim();
       if (i.botId?.trim()) patch["botId"] = i.botId.trim();
       if (i.token?.trim()) patch["token"] = i.token.trim();
-      if (i.webhookSecret?.trim()) patch["webhookSecret"] = i.webhookSecret.trim();
       if (i.botUsername?.trim()) patch["botUsername"] = i.botUsername.trim();
       if (i.webhookPath?.trim()) patch["webhookPath"] = i.webhookPath.trim();
       if (i.name?.trim()) patch["name"] = i.name.trim();
