@@ -13,7 +13,8 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "noEmitOnError": false
   },
   "include": [
     "index.ts",
