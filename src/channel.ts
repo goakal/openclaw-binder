@@ -20,6 +20,15 @@ import {
 
 const meta = getChatChannelMeta("binder");
 
+// Cache last incoming message ID per group so `message` tool replies always have a parent
+const lastMessageIdByGroup = new Map<string, string>();
+export function setBinderLastMessageId(groupId: string, messageId: string): void {
+  lastMessageIdByGroup.set(groupId, messageId);
+}
+function getBinderLastMessageId(groupId: string): string | undefined {
+  return lastMessageIdByGroup.get(groupId);
+}
+
 const binderConfigBase = createScopedChannelConfigBase<ResolvedBinderAccount>({
   sectionKey: "binder",
   listAccountIds: listBinderAccountIds,
@@ -38,6 +47,70 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
     threads: false,
     nativeCommands: false,
     blockStreaming: false,
+  },
+  messaging: {
+    targetPrefixes: ["binder"],
+    normalizeTarget: (raw: string): string | null => {
+      const trimmed = raw?.trim();
+      if (!trimmed) return null;
+      const normalized = trimmed.replace(/^binder:/i, "");
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)) {
+        return normalized;
+      }
+      return null;
+    },
+    targetResolver: {
+      hint: "Binder group ID (UUID)",
+      looksLikeId: (raw: string, normalized?: string): boolean => {
+        const check = normalized ?? raw ?? "";
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          check.replace(/^binder:/i, "")
+        );
+      },
+      resolveTarget: async ({
+        cfg,
+        accountId,
+        input,
+        normalized,
+        preferredKind,
+      }: {
+        cfg: unknown;
+        accountId?: string;
+        input: string;
+        normalized?: string;
+        preferredKind?: string;
+      }) => {
+        const raw = normalized?.trim() || input?.trim();
+        if (!raw) return null;
+        const groupId = raw.replace(/^binder:/i, "");
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(groupId)) {
+          return null;
+        }
+        return {
+          to: groupId,
+          kind: "group" as const,
+          display: groupId,
+          source: "resolved" as const,
+        };
+      },
+    },
+    resolveDeliveryTarget: ({ conversationId, parentConversationId }: { conversationId: string; parentConversationId?: string | null }) => {
+      const groupId = conversationId?.trim();
+      if (!groupId) return null;
+      return { to: groupId };
+    },
+    resolveSessionTarget: ({ id }: { id: string }) => {
+      const groupId = id?.trim();
+      if (!groupId) return null;
+      return groupId;
+    },
+    parseExplicitTarget: ({ raw }: { raw: string }) => {
+      const trimmed = raw?.trim() ?? "";
+      const groupId = trimmed.replace(/^binder:/i, "");
+      if (!groupId) return null;
+      return { kind: "group" as const, id: groupId };
+    },
+    inferTargetChatType: () => "group" as const,
   },
   reload: { configPrefixes: ["channels.binder"] },
   config: {
@@ -145,7 +218,8 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       if (!groupId) {
         throw new Error("Binder sendText: missing target group_id (to)");
       }
-      const parentMessageId = (replyToId as string | undefined)?.trim() ?? groupId;
+      // Binder API requires parent_message_id for every message; fall back to last seen
+      const parentMessageId = (replyToId as string | undefined)?.trim() || getBinderLastMessageId(groupId) || "";
       await postBinderMessage({ account, groupId, parentMessageId, content: text });
       return { channel: "binder" };
     },

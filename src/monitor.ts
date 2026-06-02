@@ -13,6 +13,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { ResolvedBinderAccount } from "./accounts.js";
 import { postBinderMessage } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
+import { setBinderLastMessageId } from "./channel.js";
 
 export type BinderRuntimeEnv = {
   log?: (message: string) => void;
@@ -189,6 +190,9 @@ async function processBinderEvent(
     runtime.log?.(`[${account.accountId}] processBinderEvent: no group_id, dropping`);
     return;
   }
+
+  // Cache this message ID so outbound `message` tool sends have a valid parent
+  setBinderLastMessageId(groupId, data.message_id);
 
   const rawBody = (data.content ?? "").trim();
   const cleanBody = rawBody

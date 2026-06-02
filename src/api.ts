@@ -9,7 +9,15 @@ export async function postBinderMessage(params: {
   const { account, groupId, parentMessageId, content } = params;
   const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages`;
 
-  console.log(`[Binder] POST ${url} — group=${groupId}, parent=${parentMessageId}, content.len=${content.length}`);
+  const payload: Record<string, unknown> = {
+    group_id: groupId,
+    content,
+  };
+  if (parentMessageId) {
+    payload.parent_message_id = parentMessageId;
+  }
+
+  console.log(`[Binder] POST ${url} — group=${groupId}, parent=${parentMessageId || "(none)"}, content.len=${content.length}`);
 
   const res = await fetch(url, {
     method: "POST",
@@ -18,11 +26,7 @@ export async function postBinderMessage(params: {
       Authorization: `Bearer ${account.config.token}`,
       "X-Bot-ID": account.config.botId,
     },
-    body: JSON.stringify({
-      group_id: groupId,
-      parent_message_id: parentMessageId,
-      content,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
