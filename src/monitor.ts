@@ -157,6 +157,10 @@ async function handleBinderWebhookRequest(
         return true;
       }
 
+      target.runtime.log?.(
+        `[${target.account.accountId}] Webhook inbound: event=${payload.event} msg=${payload.data.message_id} group=${payload.data.group_id} sender=${payload.data.sender.id}`,
+      );
+
       target.statusSink?.({ lastInboundAt: Date.now() });
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
@@ -178,9 +182,11 @@ async function processBinderEvent(
   target: BinderWebhookTarget,
 ): Promise<void> {
   const { account, config, runtime } = target;
+  runtime.log?.(`[${account.accountId}] processBinderEvent: msg=${data.message_id} sender=${data.sender.id} group=${data.group_id}`);
 
   const groupId = data.group_id;
   if (!groupId) {
+    runtime.log?.(`[${account.accountId}] processBinderEvent: no group_id, dropping`);
     return;
   }
 
@@ -190,10 +196,18 @@ async function processBinderEvent(
     .trim();
 
   if (!cleanBody) {
+    runtime.log?.(`[${account.accountId}] processBinderEvent: empty body after mention strip, dropping`);
     return;
   }
 
+  runtime.log?.(`[${account.accountId}] processBinderEvent: cleanBody.len=${cleanBody.length}`);
+
   const core = getBinderRuntime();
+  if (!core) {
+    runtime.error?.(`[${account.accountId}] processBinderEvent: getBinderRuntime returned null/undefined`);
+    return;
+  }
+  runtime.log?.(`[${account.accountId}] processBinderEvent: runtime acquired`);
 
   const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: config,
@@ -203,6 +217,7 @@ async function processBinderEvent(
     runtime: core.channel,
     sessionStore: config.session?.store,
   });
+  runtime.log?.(`[${account.accountId}] processBinderEvent: route.agentId=${route.agentId} sessionKey=${route.sessionKey}`);
 
   const { storePath, body } = buildEnvelope({
     channel: "Binderr",
@@ -234,6 +249,7 @@ async function processBinderEvent(
     OriginatingChannel: "binder",
     OriginatingTo: `binderr:${groupId}`,
   });
+  runtime.log?.(`[${account.accountId}] processBinderEvent: ctxPayload finalized, MessageSid=${ctxPayload.MessageSid}`);
 
   void core.channel.session
     .recordSessionMetaFromInbound({
@@ -251,6 +267,7 @@ async function processBinderEvent(
     channel: "binder",
     accountId: route.accountId,
   });
+  runtime.log?.(`[${account.accountId}] processBinderEvent: prefixOptions ready, calling dispatchReplyWithBufferedBlockDispatcher`);
 
   const parentMessageId = data.parent_message_id;
 
@@ -276,12 +293,14 @@ async function processBinderEvent(
         runtime.error?.(
           `[${account.accountId}] Binderr ${info.kind} reply failed: ${String(err)}`,
         );
+        console.error(`[Binder] deliver onError: kind=${info.kind}, err=${String(err)}`);
       },
     },
     replyOptions: {
       onModelSelected,
     },
   });
+  runtime.log?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher returned`);
 }
 
 export function monitorBinderProvider(options: BinderMonitorOptions): () => void {
