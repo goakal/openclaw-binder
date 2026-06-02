@@ -1,7 +1,7 @@
 export type BinderAccountConfig = {
   enabled?: boolean;
   name?: string;
-  /** Base URL of the Binderr instance, e.g. "https://binderr.example.com" */
+  /** Base URL of the Binder instance, e.g. "https://binder.example.com" */
   apiUrl: string;
   /** Bot ID from Binderr database */
   botId: string;

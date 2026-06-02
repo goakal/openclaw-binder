@@ -76,7 +76,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         webhookSecret?: string;
         botUsername?: string;
       };
-      if (!i.apiUrl?.trim()) return "Binder requires --api-url (e.g. https://binderr.example.com)";
+      if (!i.apiUrl?.trim()) return "Binder requires --api-url (e.g. https://binder.example.com)";
       if (!i.botId?.trim()) return "Binder requires --bot-id";
       if (!i.token?.trim()) return "Binder requires --token (bearer token)";
       if (!i.webhookSecret?.trim()) return "Binder requires --webhook-secret (from bot creation response)";
@@ -129,10 +129,10 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
     resolveTarget: ({ to }) => {
       const trimmed = to?.trim();
       if (!trimmed) {
-        return { ok: false, error: new Error("Binder target is required (group ID or binderr:groupId)") };
+        return { ok: false, error: new Error("Binder target is required (group ID or binder:groupId)") };
       }
-      // Strip binderr: prefix if present; bare UUIDs pass through
-      const normalized = trimmed.replace(/^binderr:/i, "");
+      // Strip binder: prefix if present; bare UUIDs pass through
+      const normalized = trimmed.replace(/^binder:/i, "");
       if (!normalized) {
         return { ok: false, error: new Error("Invalid Binder target") };
       }
@@ -141,7 +141,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
     sendText: async ({ cfg, to, text, accountId, replyToId }) => {
       const account = resolveBinderAccount({ cfg, accountId });
       const rawTo = to?.trim() ?? "";
-      const groupId = rawTo.replace(/^binderr:/i, "");
+      const groupId = rawTo.replace(/^binder:/i, "");
       if (!groupId) {
         throw new Error("Binder sendText: missing target group_id (to)");
       }

@@ -220,7 +220,7 @@ async function processBinderEvent(
   runtime.log?.(`[${account.accountId}] processBinderEvent: route.agentId=${route.agentId} sessionKey=${route.sessionKey}`);
 
   const { storePath, body } = buildEnvelope({
-    channel: "Binderr",
+    channel: "binder",
     from: data.sender.name || `user:${data.sender.id}`,
     timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
     body: cleanBody,
@@ -231,12 +231,12 @@ async function processBinderEvent(
     BodyForAgent: cleanBody,
     RawBody: rawBody,
     CommandBody: cleanBody,
-    From: `binderr:${data.sender.id}`,
-    To: `binderr:${groupId}`,
+    From: `binder:${data.sender.id}`,
+    To: groupId,
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
     ChatType: "channel",
-    ConversationLabel: `Binderr group ${groupId}`,
+    ConversationLabel: `Binder group ${groupId}`,
     SenderName: data.sender.name || undefined,
     SenderId: data.sender.id,
     SenderUsername: data.sender.username ?? undefined,
@@ -247,7 +247,7 @@ async function processBinderEvent(
     ReplyToId: data.parent_message_id,
     MessageThreadId: data.thread_id ?? undefined,
     OriginatingChannel: "binder",
-    OriginatingTo: `binderr:${groupId}`,
+    OriginatingTo: groupId,
   });
   runtime.log?.(`[${account.accountId}] processBinderEvent: ctxPayload finalized, MessageSid=${ctxPayload.MessageSid}`);
 
@@ -270,6 +270,12 @@ async function processBinderEvent(
   runtime.log?.(`[${account.accountId}] processBinderEvent: prefixOptions ready, calling dispatchReplyWithBufferedBlockDispatcher`);
 
   const parentMessageId = data.parent_message_id;
+
+  if (!core.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher) {
+    runtime.error?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher is missing on core.channel.reply`);
+    return;
+  }
+  runtime.log?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher exists`);
 
   await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
     ctx: ctxPayload,
