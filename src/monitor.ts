@@ -260,6 +260,9 @@ async function processBinderEvent(
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
+        runtime.log?.(
+          `[${account.accountId}] Binder deliver: sending reply to group ${groupId}, parent=${parentMessageId}, text.len=${payload.text?.length ?? 0}`,
+        );
         await postBinderMessage({
           account,
           groupId,
@@ -267,6 +270,7 @@ async function processBinderEvent(
           content: payload.text,
         });
         target.statusSink?.({ lastOutboundAt: Date.now() });
+        runtime.log?.(`[${account.accountId}] Binder deliver: reply sent successfully`);
       },
       onError: (err, info) => {
         runtime.error?.(

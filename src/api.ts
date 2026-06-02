@@ -9,6 +9,8 @@ export async function postBinderMessage(params: {
   const { account, groupId, parentMessageId, content } = params;
   const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages`;
 
+  console.log(`[Binder] POST ${url} — group=${groupId}, parent=${parentMessageId}, content.len=${content.length}`);
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -25,8 +27,11 @@ export async function postBinderMessage(params: {
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    console.error(`[Binder] POST failed: ${res.status} ${body}`);
     throw new Error(`Binderr API error ${res.status}: ${body}`);
   }
+
+  console.log(`[Binder] POST success: ${res.status}`);
 }
 
 /**
