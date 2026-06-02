@@ -29,3 +29,20 @@
 ## Build
 - `npm run build` runs `tsc` and allows failure (`|| true`) so CI doesn't break on peer-dep type resolution.
 - The extension exports `dist/index.js` (runtime) and `dist/setup-entry.js` (setup / CLI entry).
+
+## Target Resolution (`messaging` config)
+The extension defines a `messaging` block so OpenClaw's `message` tool can resolve `binder:UUID` targets:
+- `targetPrefixes: ["binder"]` — registers `binder:` as a valid target prefix.
+- `normalizeTarget` — strips the `binder:` prefix and validates the UUID format.
+- `targetResolver` — resolves raw targets into `{ to, kind: "group", display, source: "resolved" }`.
+- `resolveDeliveryTarget` / `resolveSessionTarget` — map conversation/session IDs back to group IDs.
+- `parseExplicitTarget` — parses explicit `binder:UUID` into `{ kind: "group", id }`.
+- `inferTargetChatType` — always returns `"group"`.
+
+Without this section, the `message` tool cannot route to Binder groups and will emit `Unknown target` errors.
+
+## Outbound Reply Tracking
+- Because Binderr requires `parent_message_id` on every message, the extension caches the last incoming message ID per group (`lastMessageIdByGroup`).
+- When the agent uses the `message` tool (no `replyToId`), `sendText` falls back to the cached last message ID so the API call succeeds.
+- `processBinderEvent` updates the cache with `data.message_id` on every inbound webhook.
+- `postBinderMessage` only includes `parent_message_id` in the payload when it's truthy, avoiding empty-string failures.
