@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createReplyPrefixOptions } from "openclaw/plugin-sdk/reply-runtime";
+import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import {
   createWebhookInFlightLimiter,
   readWebhookBodyOrReject,
