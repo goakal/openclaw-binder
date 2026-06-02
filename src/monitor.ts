@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReplyPrefixOptions } from "openclaw/plugin-sdk/reply-runtime";
 import {
@@ -60,6 +60,11 @@ function verifyBinderSignature(body: string, signature: string, secret: string):
     return false;
   }
   return timingSafeEqual(a, b);
+}
+
+/** Hash a plain bot token with SHA-256 so the result matches the backend's stored tokenHash. */
+function resolveBinderWebhookSecret(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function isTimestampFresh(timestampHeader: string | string[] | undefined): boolean {
@@ -134,7 +139,7 @@ async function handleBinderWebhookRequest(
       }
 
       const target = targets.find((t) =>
-        verifyBinderSignature(rawBody, signatureHeader, t.account.config.token),
+        verifyBinderSignature(rawBody, signatureHeader, resolveBinderWebhookSecret(t.account.config.token)),
       );
 
       if (!target) {
