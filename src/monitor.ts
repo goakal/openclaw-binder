@@ -297,9 +297,18 @@ async function processBinderEvent(
       },
       onError: (err, info) => {
         runtime.error?.(
-          `[${account.accountId}] Binderr ${info.kind} reply failed: ${String(err)}`,
+          `[${account.accountId}] Binder ${info.kind} reply failed: ${String(err)}`,
         );
         console.error(`[Binder] deliver onError: kind=${info.kind}, err=${String(err)}`);
+      },
+      onSkip: (reason) => {
+        runtime.log?.(`[${account.accountId}] Binder onSkip: reply skipped, reason=${reason}`);
+      },
+      onReplyStart: () => {
+        runtime.log?.(`[${account.accountId}] Binder onReplyStart: reply generation started`);
+      },
+      onIdle: () => {
+        runtime.log?.(`[${account.accountId}] Binder onIdle: dispatcher idle`);
       },
     },
     replyOptions: {
