@@ -33,6 +33,7 @@ openclaw config set channels.binder.accounts.default.apiUrl "https://your-binder
 openclaw config set channels.binder.accounts.default.botId "BOT_ID"
 openclaw config set channels.binder.accounts.default.token "BOT_TOKEN"
 openclaw config set channels.binder.accounts.default.botUsername "openclaw"
+openclaw config set channels.binder.accounts.default.webhookSecret "WEBHOOK_SECRET"
 openclaw config set channels.binder.accounts.default.webhookPath "/binder"
 
 openclaw gateway restart
@@ -44,7 +45,8 @@ openclaw gateway restart
 |---|---|
 | `apiUrl` | Your Binderr instance URL |
 | `botId` | Bot ID from Binderr (`POST /api/bots/v1` response) |
-| `token` | Bot bearer token (shown once on creation). Also used to verify inbound webhook signatures. |
+| `token` | Bot bearer token (shown once on creation). Used for API authentication. |
+| `webhookSecret` | Webhook HMAC secret (shown once on creation). Used to verify inbound webhook signatures. |
 | `botUsername` | Bot's @handle without the `@` |
 | `webhookPath` | Webhook endpoint path (default: `/binder`) |
 

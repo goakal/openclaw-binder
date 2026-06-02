@@ -31,14 +31,14 @@ export async function postBinderMessage(params: {
 
 /**
  * Probe the Binderr API to verify the bot token is valid.
- * Uses a known-invalid threadId — a 400 means auth is OK, 401 means bad token.
+ * Uses the dedicated /api/bots/v1/ping endpoint.
  */
 export async function probeBinderToken(account: ResolvedBinderAccount): Promise<{
   ok: boolean;
   statusCode?: number;
   error?: string;
 }> {
-  const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages?threadId=__probe__&limit=1`;
+  const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/ping`;
 
   try {
     const res = await fetch(url, {
@@ -47,9 +47,9 @@ export async function probeBinderToken(account: ResolvedBinderAccount): Promise<
         "X-Bot-ID": account.config.botId,
       },
     });
-    // 400 = bad threadId but auth passed → token is valid
-    // 401 = unauthorized → token is bad
-    return { ok: res.status !== 401, statusCode: res.status };
+    // 200 = authenticated and bot is active → token is valid
+    // 401 = unauthorized or inactive bot → token is bad
+    return { ok: res.status === 200, statusCode: res.status };
   } catch (err) {
     return { ok: false, error: String(err) };
   }

@@ -25,7 +25,7 @@ const binderConfigBase = createScopedChannelConfigBase<ResolvedBinderAccount>({
   listAccountIds: listBinderAccountIds,
   resolveAccount: (cfg, accountId) => resolveBinderAccount({ cfg, accountId }),
   defaultAccountId: resolveDefaultBinderAccountId,
-  clearBaseFields: ["apiUrl", "botId", "token", "botUsername", "webhookPath"],
+  clearBaseFields: ["apiUrl", "botId", "token", "webhookSecret", "botUsername", "webhookPath"],
 });
 
 export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
@@ -47,6 +47,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         account.config.apiUrl?.trim() &&
           account.config.botId?.trim() &&
           account.config.token?.trim() &&
+          account.config.webhookSecret?.trim() &&
           account.config.botUsername?.trim(),
       ),
     describeAccount: (account) => ({
@@ -56,7 +57,8 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       configured: Boolean(
         account.config.apiUrl?.trim() &&
           account.config.botId?.trim() &&
-          account.config.token?.trim(),
+          account.config.token?.trim() &&
+          account.config.webhookSecret?.trim(),
       ),
       apiUrl: account.config.apiUrl,
       botId: account.config.botId,
@@ -71,11 +73,13 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         apiUrl?: string;
         botId?: string;
         token?: string;
+        webhookSecret?: string;
         botUsername?: string;
       };
       if (!i.apiUrl?.trim()) return "Binder requires --api-url (e.g. https://binderr.example.com)";
       if (!i.botId?.trim()) return "Binder requires --bot-id";
       if (!i.token?.trim()) return "Binder requires --token (bearer token)";
+      if (!i.webhookSecret?.trim()) return "Binder requires --webhook-secret (from bot creation response)";
       if (!i.botUsername?.trim()) return "Binder requires --bot-username (the bot's @handle)";
       return null;
     },
@@ -84,6 +88,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         apiUrl?: string;
         botId?: string;
         token?: string;
+        webhookSecret?: string;
         botUsername?: string;
         webhookPath?: string;
         name?: string;
@@ -95,6 +100,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       if (i.apiUrl?.trim()) patch["apiUrl"] = i.apiUrl.trim();
       if (i.botId?.trim()) patch["botId"] = i.botId.trim();
       if (i.token?.trim()) patch["token"] = i.token.trim();
+      if (i.webhookSecret?.trim()) patch["webhookSecret"] = i.webhookSecret.trim();
       if (i.botUsername?.trim()) patch["botUsername"] = i.botUsername.trim();
       if (i.webhookPath?.trim()) patch["webhookPath"] = i.webhookPath.trim();
       if (i.name?.trim()) patch["name"] = i.name.trim();
@@ -145,7 +151,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         accountId: account.accountId,
         name: account.name,
         enabled: account.enabled,
-        configured: Boolean(account.config.apiUrl?.trim() && account.config.token?.trim()),
+        configured: Boolean(account.config.apiUrl?.trim() && account.config.token?.trim() && account.config.webhookSecret?.trim()),
         runtime,
         probe,
       });

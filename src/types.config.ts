@@ -5,8 +5,10 @@ export type BinderAccountConfig = {
   apiUrl: string;
   /** Bot ID from Binderr database */
   botId: string;
-  /** Bearer token for bot API authentication. Also used to verify inbound webhook signatures. */
+  /** Bearer token for bot API authentication */
   token: string;
+  /** Webhook secret for HMAC signature verification. Returned on bot creation alongside the token. */
+  webhookSecret: string;
   /** Bot @username used to strip the mention from inbound content */
   botUsername: string;
   /** HTTP path where this account listens for webhooks. Defaults to "/binder" */
