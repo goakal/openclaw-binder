@@ -4,7 +4,7 @@
   "channels": ["binder"],
   "name": "Binder",
   "description": "OpenClaw Binder channel plugin — respond to @mentions in Binder groups",
-  "version": "2026.5.6.11",
+  "version": "2026.5.6.12",
   "contracts": {
     "channels": ["binder"]
   },
@@ -27,7 +27,8 @@
           "webhookSecret": { "type": "string" },
           "botUsername": { "type": "string" },
           "webhookPath": { "type": "string" },
-          "defaultTo": { "type": "string" }
+          "defaultTo": { "type": "string" },
+          "verbose": { "type": "boolean" }
         }
       },
       "uiHints": {

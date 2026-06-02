@@ -34,7 +34,7 @@ const binderConfigBase = createScopedChannelConfigBase<ResolvedBinderAccount>({
   listAccountIds: listBinderAccountIds,
   resolveAccount: (cfg, accountId) => resolveBinderAccount({ cfg, accountId }),
   defaultAccountId: resolveDefaultBinderAccountId,
-  clearBaseFields: ["apiUrl", "botId", "token", "webhookSecret", "botUsername", "webhookPath"],
+  clearBaseFields: ["apiUrl", "botId", "token", "webhookSecret", "botUsername", "webhookPath", "verbose"],
 });
 
 export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
@@ -148,6 +148,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         token?: string;
         webhookSecret?: string;
         botUsername?: string;
+        verbose?: boolean;
       };
       if (!i.apiUrl?.trim()) return "Binder requires --api-url (e.g. https://binder.example.com)";
       if (!i.botId?.trim()) return "Binder requires --bot-id";
@@ -165,6 +166,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
         botUsername?: string;
         webhookPath?: string;
         name?: string;
+        verbose?: boolean;
       };
       const section = (cfg.channels as Record<string, unknown>)?.["binder"] ?? {};
       const accounts = ((section as Record<string, unknown>)?.["accounts"] as Record<string, unknown>) ?? {};
@@ -177,6 +179,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       if (i.botUsername?.trim()) patch["botUsername"] = i.botUsername.trim();
       if (i.webhookPath?.trim()) patch["webhookPath"] = i.webhookPath.trim();
       if (i.name?.trim()) patch["name"] = i.name.trim();
+      if (i.verbose !== undefined) patch["verbose"] = i.verbose;
 
       return {
         ...cfg,

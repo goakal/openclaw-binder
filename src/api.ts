@@ -1,4 +1,5 @@
 import type { ResolvedBinderAccount } from "./accounts.js";
+import { binderLog, binderError } from "./log.js";
 
 export async function postBinderMessage(params: {
   account: ResolvedBinderAccount;
@@ -8,6 +9,7 @@ export async function postBinderMessage(params: {
 }): Promise<void> {
   const { account, groupId, parentMessageId, content } = params;
   const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/messages`;
+  const verbose = account.config.verbose ?? false;
 
   const payload: Record<string, unknown> = {
     group_id: groupId,
@@ -17,7 +19,7 @@ export async function postBinderMessage(params: {
     payload.parent_message_id = parentMessageId;
   }
 
-  console.log(`[Binder] POST ${url} — group=${groupId}, parent=${parentMessageId || "(none)"}, content.len=${content.length}`);
+  binderLog(verbose, `POST ${url} — group=${groupId}, parent=${parentMessageId || "(none)"}, content.len=${content.length}`);
 
   const res = await fetch(url, {
     method: "POST",
@@ -31,11 +33,11 @@ export async function postBinderMessage(params: {
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    console.error(`[Binder] POST failed: ${res.status} ${body}`);
+    binderError(verbose, `POST failed: ${res.status} ${body}`);
     throw new Error(`Binderr API error ${res.status}: ${body}`);
   }
 
-  console.log(`[Binder] POST success: ${res.status}`);
+  binderLog(verbose, `POST success: ${res.status}`);
 }
 
 /**

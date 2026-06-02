@@ -15,6 +15,8 @@ import { postBinderMessage } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 import { setBinderLastMessageId } from "./channel.js";
 
+import { binderLog, binderError } from "./log.js";
+
 export type BinderRuntimeEnv = {
   log?: (message: string) => void;
   error?: (message: string) => void;
@@ -161,6 +163,8 @@ async function handleBinderWebhookRequest(
       target.runtime.log?.(
         `[${target.account.accountId}] Webhook inbound: event=${payload.event} msg=${payload.data.message_id} group=${payload.data.group_id} sender=${payload.data.sender.id}`,
       );
+      const verbose = target.account.config.verbose ?? false;
+      binderLog(verbose, "Webhook inbound:", payload.event, payload.data.message_id);
 
       target.statusSink?.({ lastInboundAt: Date.now() });
       res.statusCode = 200;
@@ -183,11 +187,13 @@ async function processBinderEvent(
   target: BinderWebhookTarget,
 ): Promise<void> {
   const { account, config, runtime } = target;
-  runtime.log?.(`[${account.accountId}] processBinderEvent: msg=${data.message_id} sender=${data.sender.id} group=${data.group_id}`);
+  const verbose = account.config.verbose ?? false;
+
+  binderLog(verbose, "processBinderEvent:", data.message_id, data.sender.id, data.group_id);
 
   const groupId = data.group_id;
   if (!groupId) {
-    runtime.log?.(`[${account.accountId}] processBinderEvent: no group_id, dropping`);
+    binderLog(verbose, "processBinderEvent: no group_id, dropping");
     return;
   }
 
@@ -200,18 +206,18 @@ async function processBinderEvent(
     .trim();
 
   if (!cleanBody) {
-    runtime.log?.(`[${account.accountId}] processBinderEvent: empty body after mention strip, dropping`);
+    binderLog(verbose, "processBinderEvent: empty body after mention strip, dropping");
     return;
   }
 
-  runtime.log?.(`[${account.accountId}] processBinderEvent: cleanBody.len=${cleanBody.length}`);
+  binderLog(verbose, "processBinderEvent: cleanBody.len=", cleanBody.length);
 
   const core = getBinderRuntime();
   if (!core) {
     runtime.error?.(`[${account.accountId}] processBinderEvent: getBinderRuntime returned null/undefined`);
     return;
   }
-  runtime.log?.(`[${account.accountId}] processBinderEvent: runtime acquired`);
+  binderLog(verbose, "processBinderEvent: runtime acquired");
 
   const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: config,
@@ -221,7 +227,7 @@ async function processBinderEvent(
     runtime: core.channel,
     sessionStore: config.session?.store,
   });
-  runtime.log?.(`[${account.accountId}] processBinderEvent: route.agentId=${route.agentId} sessionKey=${route.sessionKey}`);
+  binderLog(verbose, "processBinderEvent: route.agentId=", route.agentId, "sessionKey=", route.sessionKey);
 
   const { storePath, body } = buildEnvelope({
     channel: "binder",
@@ -253,7 +259,7 @@ async function processBinderEvent(
     OriginatingChannel: "binder",
     OriginatingTo: groupId,
   });
-  runtime.log?.(`[${account.accountId}] processBinderEvent: ctxPayload finalized, MessageSid=${ctxPayload.MessageSid}`);
+  binderLog(verbose, "processBinderEvent: ctxPayload finalized, MessageSid=", ctxPayload.MessageSid);
 
   void core.channel.session
     .recordSessionMetaFromInbound({
@@ -271,7 +277,7 @@ async function processBinderEvent(
     channel: "binder",
     accountId: route.accountId,
   });
-  runtime.log?.(`[${account.accountId}] processBinderEvent: prefixOptions ready, calling dispatchReplyWithBufferedBlockDispatcher`);
+  binderLog(verbose, "processBinderEvent: prefixOptions ready, calling dispatchReplyWithBufferedBlockDispatcher");
 
   const parentMessageId = data.parent_message_id;
 
@@ -279,7 +285,7 @@ async function processBinderEvent(
     runtime.error?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher is missing on core.channel.reply`);
     return;
   }
-  runtime.log?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher exists`);
+  binderLog(verbose, "processBinderEvent: dispatchReplyWithBufferedBlockDispatcher exists");
 
   await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
     ctx: ctxPayload,
@@ -287,8 +293,9 @@ async function processBinderEvent(
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
-        runtime.log?.(
-          `[${account.accountId}] Binder deliver: sending reply to group ${groupId}, parent=${parentMessageId}, text.len=${payload.text?.length ?? 0}`,
+        binderLog(
+          verbose,
+          `deliver: sending reply to group ${groupId}, parent=${parentMessageId}, text.len=${payload.text?.length ?? 0}`,
         );
         await postBinderMessage({
           account,
@@ -297,29 +304,29 @@ async function processBinderEvent(
           content: payload.text,
         });
         target.statusSink?.({ lastOutboundAt: Date.now() });
-        runtime.log?.(`[${account.accountId}] Binder deliver: reply sent successfully`);
+        binderLog(verbose, "deliver: reply sent successfully");
       },
       onError: (err, info) => {
         runtime.error?.(
           `[${account.accountId}] Binder ${info.kind} reply failed: ${String(err)}`,
         );
-        console.error(`[Binder] deliver onError: kind=${info.kind}, err=${String(err)}`);
+        binderError(verbose, `deliver onError: kind=${info.kind}, err=${String(err)}`);
       },
       onSkip: (reason) => {
-        runtime.log?.(`[${account.accountId}] Binder onSkip: reply skipped, reason=${reason}`);
+        binderLog(verbose, "onSkip: reply skipped, reason=", reason);
       },
       onReplyStart: () => {
-        runtime.log?.(`[${account.accountId}] Binder onReplyStart: reply generation started`);
+        binderLog(verbose, "onReplyStart: reply generation started");
       },
       onIdle: () => {
-        runtime.log?.(`[${account.accountId}] Binder onIdle: dispatcher idle`);
+        binderLog(verbose, "onIdle: dispatcher idle");
       },
     },
     replyOptions: {
       onModelSelected,
     },
   });
-  runtime.log?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher returned`);
+  binderLog(verbose, "processBinderEvent: dispatchReplyWithBufferedBlockDispatcher returned");
 }
 
 export function monitorBinderProvider(options: BinderMonitorOptions): () => void {

@@ -11,6 +11,8 @@ export type BinderAccountConfig = {
   webhookSecret: string;
   /** Bot @username used to strip the mention from inbound content */
   botUsername: string;
+  /** Enable verbose debug logging. Defaults to false. */
+  verbose?: boolean;
   /** HTTP path where this account listens for webhooks. Defaults to "/binder" */
   webhookPath?: string;
   /** Default group_id used when sending a proactive outbound message */
