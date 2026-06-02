@@ -126,9 +126,22 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
   outbound: {
     deliveryMode: "gateway",
     textChunkLimit: 4000,
+    resolveTarget: ({ to }) => {
+      const trimmed = to?.trim();
+      if (!trimmed) {
+        return { ok: false, error: new Error("Binder target is required (group ID or binderr:groupId)") };
+      }
+      // Strip binderr: prefix if present; bare UUIDs pass through
+      const normalized = trimmed.replace(/^binderr:/i, "");
+      if (!normalized) {
+        return { ok: false, error: new Error("Invalid Binder target") };
+      }
+      return { ok: true, to: normalized };
+    },
     sendText: async ({ cfg, to, text, accountId, replyToId }) => {
       const account = resolveBinderAccount({ cfg, accountId });
-      const groupId = to?.trim();
+      const rawTo = to?.trim() ?? "";
+      const groupId = rawTo.replace(/^binderr:/i, "");
       if (!groupId) {
         throw new Error("Binder sendText: missing target group_id (to)");
       }
