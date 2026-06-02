@@ -241,7 +241,7 @@ async function processBinderEvent(
     SenderId: data.sender.id,
     SenderUsername: data.sender.username ?? undefined,
     WasMentioned: true,
-    Provider: "binderr",
+    Provider: "binder",
     Surface: "binder",
     MessageSid: data.message_id,
     ReplyToId: data.parent_message_id,
