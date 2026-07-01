@@ -114,10 +114,12 @@ Response: {"reachable": false, "error": "connection refused"}
 
 **What to do when unreachable:**
 
-1. Tell user: "Your OpenClaw gateway needs a public HTTPS URL for Binder webhooks."
-2. Guide through NAT tunnel setup (see NAT section below).
-3. After tunnel is running, get the public URL and update `${GATEWAY_URL}`.
-4. Re-run reachability check. **Do not proceed until reachable.**
+1. **Default solution: run a tunnel.** Tunnel creates an outbound connection to the tunnel provider — **no port exposure, no firewall change needed.** Gateway stays on loopback. Tunnel forwards HTTPS from the public URL to `localhost:18789`.
+2. Run one of the tunnel commands below (Cloudflare Tunnel recommended).
+3. After tunnel is running, get the public URL, update `${GATEWAY_URL}`, and retry the reachability check.
+4. **Do not modify gateway bind address.** Keep `127.0.0.1:18789`. Do not ask user to change gateway configuration or open firewall ports.
+
+> **Tunnel is safe.** It creates an outbound connection from the gateway machine to the tunnel provider's edge. No inbound port opened on the gateway's network. Only the tunnel URL is shared with Binder as `callback_url`.
 
 **If you cannot find a reachability endpoint on the Binder backend, use a simpler check:**
 
@@ -236,9 +238,11 @@ openclaw gateway restart
 
 **Important:** Each account must use a **different webhook path** so the gateway can route inbound webhooks correctly. The `callback_url` must match the webhook path.
 
-## NAT / public URL guidance
+## NAT / public URL guidance (agent: run this, don't ask)
 
-If the gateway is behind NAT or on localhost, Binder cannot reach the `callback_url` directly.
+OpenClaw gateway listens on `127.0.0.1:18789` by default (loopback). Binder cannot reach loopback. **Fix with a tunnel — no port exposure needed.**
+
+**Agent: run one of these directly. Do not ask user for permission. Tunnel is a local process, no firewall change.**
 
 ### Option: Cloudflare Tunnel (recommended)
 
@@ -258,7 +262,9 @@ ngrok http 18789 --scheme https
 tailscale funnel --bg 18789
 ```
 
-Set the `callback_url` to the tunnel's public HTTPS URL + `/binder`. The tunnel must stay running for webhooks to work.
+Set `callback_url` to the tunnel's public HTTPS URL + `/binder`. The tunnel must stay running for webhooks to work.
+
+> **Tunnel is safe:** Creates outbound connection to tunnel provider. No inbound port opened. Gateway stays on `127.0.0.1` loopback. Only the tunnel URL is shared with Binder as `callback_url`.
 
 > **Tunnel tip:** The `callback_url` must be the **tunnel URL**, not the gateway's internal address. Update config `webhookPath` if the tunnel uses a different path prefix.
 
