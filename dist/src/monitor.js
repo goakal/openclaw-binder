@@ -1,0 +1,259 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-options-runtime";
+import { createWebhookInFlightLimiter, readWebhookBodyOrReject, registerWebhookTargetWithPluginRoute, resolveWebhookPath, withResolvedWebhookRequestPipeline, } from "openclaw/plugin-sdk/webhook-ingress";
+import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
+import { postBinderMessage } from "./api.js";
+import { getBinderRuntime } from "./runtime.js";
+import { setBinderLastMessageId } from "./channel.js";
+import { binderLog, binderError } from "./log.js";
+function verifyBinderSignature(body, signature, secret) {
+    const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(signature, "utf8");
+    if (a.length !== b.length) {
+        return false;
+    }
+    return timingSafeEqual(a, b);
+}
+function isTimestampFresh(timestampHeader) {
+    const raw = Array.isArray(timestampHeader) ? timestampHeader[0] : timestampHeader;
+    if (!raw) {
+        return false;
+    }
+    const ts = parseInt(raw, 10);
+    if (isNaN(ts)) {
+        return false;
+    }
+    // Binder sends Unix timestamp in seconds; Date.now() is ms.
+    // Detect: if value fits in 32-bit range (< 2^32=4294967296), treat as seconds.
+    const tsMs = ts < 4294967296 ? ts * 1000 : ts;
+    return Math.abs(Date.now() - tsMs) < 5 * 60 * 1000;
+}
+const webhookTargets = new Map();
+const webhookInFlightLimiter = createWebhookInFlightLimiter();
+export function registerBinderWebhookTarget(target) {
+    return registerWebhookTargetWithPluginRoute({
+        targetsByPath: webhookTargets,
+        target,
+        route: {
+            auth: "plugin",
+            match: "exact",
+            pluginId: "binder",
+            source: "binder-webhook",
+            accountId: target.account.accountId,
+            log: target.runtime.log,
+            handler: async (req, res) => {
+                const handled = await handleBinderWebhookRequest(req, res);
+                if (!handled && !res.headersSent) {
+                    res.statusCode = 404;
+                    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+                    res.end("Not Found");
+                }
+            },
+        },
+    }).unregister;
+}
+async function handleBinderWebhookRequest(req, res) {
+    return await withResolvedWebhookRequestPipeline({
+        req,
+        res,
+        targetsByPath: webhookTargets,
+        allowMethods: ["POST"],
+        inFlightLimiter: webhookInFlightLimiter,
+        handle: async ({ targets }) => {
+            const bodyResult = await readWebhookBodyOrReject({ req, res, profile: "pre-auth" });
+            if (!bodyResult.ok) {
+                return true;
+            }
+            const rawBody = bodyResult.value;
+            // Binderr backend sends these header names (protocol-level, not renamed)
+            const signatureHeader = req.headers["x-binderr-signature"];
+            const timestampHeader = req.headers["x-binderr-timestamp"];
+            if (!signatureHeader) {
+                res.statusCode = 401;
+                res.end("missing signature");
+                return true;
+            }
+            if (!isTimestampFresh(timestampHeader)) {
+                res.statusCode = 401;
+                res.end("timestamp expired or missing");
+                return true;
+            }
+            const target = targets.find((t) => verifyBinderSignature(rawBody, signatureHeader, t.account.config.webhookSecret));
+            if (!target) {
+                res.statusCode = 401;
+                res.end("invalid signature");
+                return true;
+            }
+            let payload;
+            try {
+                payload = JSON.parse(rawBody);
+            }
+            catch {
+                res.statusCode = 400;
+                res.end("invalid json");
+                return true;
+            }
+            if (!["message_created", "direct_message"].includes(payload.event) || !payload.data) {
+                res.statusCode = 200;
+                res.end("{}");
+                return true;
+            }
+            target.runtime.log?.(`[${target.account.accountId}] Webhook inbound: event=${payload.event} msg=${payload.data.message_id} group=${payload.data.group_id ?? "(dm)"} sender=${payload.data.sender.id}`);
+            const verbose = target.account.config.verbose ?? false;
+            binderLog(verbose, "Webhook inbound:", payload.event, payload.data.message_id);
+            target.statusSink?.({ lastInboundAt: Date.now() });
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end("{}");
+            processBinderEvent(payload.event, payload.data, target).catch((err) => {
+                target.runtime.error?.(`[${target.account.accountId}] Binderr webhook processing failed: ${String(err)}`);
+            });
+            return true;
+        },
+    });
+}
+async function processBinderEvent(event, data, target) {
+    const { account, config, runtime } = target;
+    const verbose = account.config.verbose ?? false;
+    const isDm = event === "direct_message";
+    binderLog(verbose, "processBinderEvent:", event, data.message_id, data.sender.id, data.group_id);
+    const rawPeerId = isDm ? (data.conversation_id || data.message_id) : (data.thread_id || data.group_id);
+    if (!rawPeerId) {
+        binderLog(verbose, "processBinderEvent: no peer id, dropping");
+        return;
+    }
+    const peerId = isDm ? `dm:${rawPeerId}` : (data.thread_id ? `thread:${rawPeerId}` : `group:${rawPeerId}`);
+    const apiPeerId = rawPeerId; // bare UUID for API calls
+    binderLog(verbose, "processBinderEvent: peerId=", peerId);
+    setBinderLastMessageId(peerId, data.message_id);
+    const rawBody = (data.content ?? "").trim();
+    const cleanBody = isDm ? rawBody : rawBody
+        .replace(new RegExp(`@${account.config.botUsername}\\b`, "gi"), "")
+        .trim();
+    if (!cleanBody) {
+        binderLog(verbose, "processBinderEvent: empty body, dropping");
+        return;
+    }
+    const core = getBinderRuntime();
+    if (!core) {
+        runtime.error?.(`[${account.accountId}] processBinderEvent: getBinderRuntime returned null/undefined`);
+        return;
+    }
+    // Cast peer to avoid SDK generic inference mismatch
+    const peer = { kind: (isDm ? "direct" : "group"), id: peerId };
+    const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
+        cfg: config,
+        channel: "binder",
+        accountId: account.accountId,
+        peer,
+        runtime: core.channel,
+        sessionStore: config.session?.store,
+    });
+    const { storePath, body } = buildEnvelope({
+        channel: "binder",
+        from: data.sender.name || `user:${data.sender.id}`,
+        timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+        body: cleanBody,
+    });
+    const replyTo = isDm ? (data.pending_message_id ?? "") : data.parent_message_id;
+    const chatType = isDm ? "direct" : "channel";
+    const isThread = !isDm && !!data.thread_id;
+    const ctxPayload = core.channel.reply.finalizeInboundContext({
+        Body: body,
+        BodyForAgent: cleanBody,
+        RawBody: rawBody,
+        CommandBody: cleanBody,
+        From: `binder:${data.sender.id}`,
+        To: peerId,
+        SessionKey: route.sessionKey,
+        AccountId: route.accountId,
+        ChatType: chatType,
+        ConversationLabel: isDm ? `DM with ${data.sender.name || data.sender.id}` : (isThread ? `Binder thread ${peerId}` : `Binder group ${peerId}`),
+        SenderName: data.sender.name || undefined,
+        SenderId: data.sender.id,
+        SenderUsername: data.sender.username ?? undefined,
+        WasMentioned: !isDm,
+        Provider: "binder",
+        Surface: "binder",
+        MessageSid: data.message_id,
+        ReplyToId: replyTo,
+        MessageThreadId: data.thread_id ?? undefined,
+        OriginatingChannel: "binder",
+        OriginatingTo: peerId,
+    });
+    void core.channel.session
+        .recordSessionMetaFromInbound({
+        storePath,
+        sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+        ctx: ctxPayload,
+    })
+        .catch((err) => {
+        runtime.error?.(`binder: failed updating session meta: ${String(err)}`);
+    });
+    const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
+        cfg: config,
+        agentId: route.agentId,
+        channel: "binder",
+        accountId: route.accountId,
+    });
+    if (!core.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher) {
+        runtime.error?.(`[${account.accountId}] processBinderEvent: dispatchReplyWithBufferedBlockDispatcher missing`);
+        return;
+    }
+    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: ctxPayload,
+        cfg: config,
+        dispatcherOptions: {
+            ...prefixOptions,
+            deliver: async (payload) => {
+                binderLog(verbose, `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}`);
+                await postBinderMessage({
+                    account,
+                    groupId: apiPeerId,
+                    parentMessageId: replyTo,
+                    content: payload.text ?? "",
+                    isDm,
+                });
+                target.statusSink?.({ lastOutboundAt: Date.now() });
+            },
+            onError: (err, info) => {
+                runtime.error?.(`[${account.accountId}] Binder ${info.kind} reply failed: ${String(err)}`);
+                binderError(verbose, `deliver onError: kind=${info.kind}, err=${String(err)}`);
+            },
+            onSkip: (reason) => {
+                binderLog(verbose, "onSkip: reply skipped, reason=", reason);
+            },
+            onReplyStart: () => {
+                binderLog(verbose, "onReplyStart: reply generation started");
+            },
+            onIdle: () => {
+                binderLog(verbose, "onIdle: dispatcher idle");
+            },
+        },
+        replyOptions: {
+            onModelSelected,
+        },
+    });
+}
+export function monitorBinderProvider(options) {
+    const webhookPath = resolveWebhookPath({
+        webhookPath: options.account.config.webhookPath,
+        defaultPath: "/binder",
+    }) ?? "/binder";
+    const unregister = registerBinderWebhookTarget({
+        account: options.account,
+        config: options.config,
+        runtime: options.runtime,
+        path: webhookPath,
+        statusSink: options.statusSink,
+    });
+    options.runtime.log?.(`[${options.account.accountId}] Binder webhook listener registered at ${webhookPath}`);
+    return unregister;
+}
+export function resolveBinderWebhookPath(params) {
+    return (resolveWebhookPath({
+        webhookPath: params.account.config.webhookPath,
+        defaultPath: "/binder",
+    }) ?? "/binder");
+}
