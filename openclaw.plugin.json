@@ -1,0 +1,47 @@
+{
+  "id": "binder",
+  "kind": "channel",
+  "channels": ["binder"],
+  "name": "Binder",
+  "description": "OpenClaw Binder channel plugin — respond to @mentions in Binder groups",
+  "version": "2026.6.30.7",
+  "skills": ["./skills"],
+  "contracts": {
+    "channels": ["binder"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "channelConfigs": {
+    "binder": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "name": { "type": "string" },
+          "apiUrl": { "type": "string" },
+          "botId": { "type": "string" },
+          "token": { "type": "string" },
+          "webhookSecret": { "type": "string" },
+          "botUsername": { "type": "string" },
+          "webhookPath": { "type": "string" },
+          "defaultTo": { "type": "string" },
+          "verbose": { "type": "boolean" }
+        }
+      },
+      "uiHints": {
+        "token": {
+          "label": "Bot token",
+          "sensitive": true
+        },
+        "webhookSecret": {
+          "label": "Webhook secret",
+          "sensitive": true
+        }
+      }
+    }
+  }
+}

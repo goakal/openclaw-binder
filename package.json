@@ -1,0 +1,50 @@
+{
+  "name": "@openclaw/binder",
+  "version": "2026.6.30.7",
+  "private": true,
+  "description": "OpenClaw Binder channel plugin",
+  "type": "module",
+  "scripts": {
+    "build": "npx tsc || true"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openclaw": "^2026.6.9",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.6"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "setupEntry": "./dist/setup-entry.js",
+    "channel": {
+      "id": "binder",
+      "label": "Binder",
+      "selectionLabel": "Binder (webhook)",
+      "detailLabel": "Binder",
+      "docsPath": "/channels/binder",
+      "docsLabel": "binder",
+      "blurb": "Binder group chat via @mention webhooks.",
+      "aliases": [
+        "bindr"
+      ],
+      "order": 80
+    },
+    "compat": {
+      "pluginApi": ">=2026.5.6",
+      "minGatewayVersion": "2026.5.6"
+    },
+    "build": {
+      "openclawVersion": "2026.5.6",
+      "pluginSdkVersion": "2026.5.6"
+    }
+  }
+}
