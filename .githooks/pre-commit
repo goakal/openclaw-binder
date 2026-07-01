@@ -1,0 +1,54 @@
+#!/bin/sh
+# Pre-commit hook: block staging URLs, placeholder secrets, and suspicious patterns
+# from being committed to this public repo.
+
+set -e
+
+RED='\033[0;31m'
+NC='\033[0m'
+PASS=0
+
+# Patterns that should NEVER appear in a public commit
+# (staging URLs, internal hostnames, placeholder secrets)
+BLOCKED_PATTERNS="
+staging\.heybinder\.com
+staging-.*\.openclaw\.ai
+(api|app)\.staging
+internal\.heybinder
+ghp_[A-Za-z0-9_]{36}
+gho_[A-Za-z0-9_]{36}
+sk-[A-Za-z0-9]{20,}
+pk-[A-Za-z0-9]{20,}
+xox[bpras]-[0-9A-Za-Z-]{10,}
+AKIA[0-9A-Z]{16}
+"
+
+# Only scan staged changes (not working tree)
+STAGED=$(git diff --cached --diff-filter=ACMR --name-only)
+
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+FAILED=""
+for pattern in $BLOCKED_PATTERNS; do
+  MATCHES=$(git diff --cached --diff-filter=ACMR -G"$pattern" --name-only 2>/dev/null || true)
+  if [ -n "$MATCHES" ]; then
+    FAILED="$FAILED\n  pattern: $pattern"
+    for f in $MATCHES; do
+      FAILED="$FAILED\n    - $f"
+    done
+  fi
+done
+
+if [ -n "$FAILED" ]; then
+  echo "${RED}[SECURITY] Blocked patterns detected in staged changes:${NC}$FAILED"
+  echo ""
+  echo "These look like staging URLs, internal endpoints, or secrets."
+  echo "Remove them before committing, or use a placeholder/template."
+  echo ""
+  echo "If this is a false positive, run: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
