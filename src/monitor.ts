@@ -49,6 +49,7 @@ type BinderInboundData = {
   timestamp: string;
   conversation_id?: string;
   pending_message_id?: string;
+  nonce?: string;
 };
 
 type BinderWebhookPayload = {
@@ -156,6 +157,15 @@ async function handleBinderWebhookRequest(
       } catch {
         res.statusCode = 400;
         res.end("invalid json");
+        return true;
+      }
+
+      if (payload.event === "ping") {
+        target.runtime.log?.(`[${target.account.accountId}] Webhook ping`);
+        target.statusSink?.({ lastInboundAt: Date.now() });
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, nonce: payload.data?.nonce ?? null }));
         return true;
       }
 

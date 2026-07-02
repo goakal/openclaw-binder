@@ -13,13 +13,16 @@ metadata:
 
 # Binder Channel Setup
 
-Configure this OpenClaw gateway to receive Binder @mention events and send replies. This skill:
+Set up this OpenClaw gateway to receive Binder @mention events and send replies.
 
-1. Installs the `@openclaw/binder` plugin (if not installed)
-2. Registers a bot on the Binder backend with `owner_token`
-3. Writes the channel config (`channels.binder.accounts.<id>`)
-4. Sets the bot's `callback_url` to this gateway's public webhook endpoint
-5. Verifies the channel is healthy
+**Agent flow:**
+1. Resolve env details (API URL, owner token) — present plan to user for confirmation
+2. Register bot on Binder backend
+3. Install the `@openclaw/binder` plugin on the gateway
+4. If gateway not publicly reachable — set up tunnel
+5. Update bot's `callback_url` to point at gateway
+6. Verify end-to-end webhook delivery
+7. Write channel config + restart + verify
 
 Once configured, the `binder` bundled skill handles capability discovery from the **live backend catalog** — no per-family skill updates needed.
 
@@ -34,7 +37,6 @@ Once configured, the `binder` bundled skill handles capability discovery from th
 ## Prerequisites
 
 - OpenClaw gateway running (`openclaw gateway status`)
-- Gateway must be reachable via **public HTTPS URL** (see NAT guidance below)
 - Binder backend `api_url` + valid `owner_token` (obtained from Binder account settings)
 
 ## Installation options
@@ -67,70 +69,26 @@ Check in order:
 
 If prompt includes `Binder API URL`, use it directly. Ask user if unsure.
 
-### Step 2: Get the gateway URL (for callback)
+### Step 2: Present plan to user
 
-```bash
-# Check for explicit remote URL first
-openclaw config get gateway.remote.url
-
-# Fallback: local bind address + port
-openclaw config get gateway.bind
-openclaw config get gateway.port
-```
-
-If `gateway.remote.url` exists, use it directly. Otherwise construct:
-```
-<scheme>://<host>:<port>
-```
-Default port `18789`. Scheme is `https` if TLS enabled, else `http`.
-
-**Important:** Binder needs an **HTTPS** callback URL the internet can reach. See NAT guidance below if the gateway is on localhost or a private IP.
-
-### Step 3: Verify reachability from Binder
-
-Before registering, check Binder can reach the gateway's callback URL. Skip this if the gateway explicitly has `gateway.remote.url` set (user already configured public access).
-
-```bash
-# Ping the gateway from Binder's perspective
-curl -s -o /dev/null -w "%{http_code}" \
-  "https://binder.openclaw.ai/api/bots/v1/ping-url" \
-  --data-urlencode "url=${GATEWAY_URL}/health"
-```
-
-Or just Binder's generic webhook verification endpoint:
-
-```bash
-# Ask Binder to check reachability
-curl -s "${API_URL}/api/bots/v1/check-reachability" \
-  -H "Content-Type: application/json" \
-  -d "{\"url\": \"${GATEWAY_URL}/binder\"}"
-```
-
-If the OpenClaw instance is behind NAT/localhost/private network, the reachability check fails:
+Before doing anything, summarize what you're about to do and show the user:
 
 ```
-Response: {"reachable": false, "error": "connection refused"}
+I'll register a new Binder bot with:
+  - Name: <generated-name>
+  - Username: <generated-username>.ai
+  - API URL: <api-url>
+  - Owner token: <masked>
+  
+Then install the binder plugin on this gateway and
+configure the channel.
+
+Proceed? (y/n)
 ```
 
-**What to do when unreachable:**
+Wait for user to confirm before continuing.
 
-1. **Default solution: run a tunnel.** Tunnel creates an outbound connection to the tunnel provider — **no port exposure, no firewall change needed.** Gateway stays on loopback. Tunnel forwards HTTPS from the public URL to `localhost:18789`.
-2. Run one of the tunnel commands below (Cloudflare Tunnel recommended).
-3. After tunnel is running, get the public URL, update `${GATEWAY_URL}`, and retry the reachability check.
-4. **Do not modify gateway bind address.** Keep `127.0.0.1:18789`. Do not ask user to change gateway configuration or open firewall ports.
-
-> **Tunnel is safe.** It creates an outbound connection from the gateway machine to the tunnel provider's edge. No inbound port opened on the gateway's network. Only the tunnel URL is shared with Binder as `callback_url`.
-
-**If you cannot find a reachability endpoint on the Binder backend, use a simpler check:**
-
-```bash
-# Test callback URL resolves publicly — catch DNS + port issues
-curl -s --connect-timeout 5 "${GATEWAY_URL}/health" 2>&1 || echo "UNREACHABLE"
-```
-
-This checks from *the gateway's own perspective* (not Binder's), so it only catches gateway-down issues. The real check is whether Binder can reach it. If you're unsure, **assume unreachable** and guide through NAT tunnel setup.
-
-### Step 4: Register the bot with Binder
+### Step 3: Register the bot with Binder
 
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1" \
@@ -175,7 +133,46 @@ Save these for the next step:
 - `401` — invalid or expired `owner_token`.
 - `400` — missing/invalid fields.
 
-### Step 5: Configure the channel
+### Step 4: Install the plugin
+
+Install the `@openclaw/binder` plugin on the gateway. See **Installation options** above for prebuilt .tgz or source install.
+
+```bash
+openclaw plugins list | grep binder
+```
+
+If plugin not listed, run install steps from the **Installation options** section.
+
+### Step 5: Set up public URL if needed
+
+Check if gateway has a public HTTPS URL Binder can reach:
+
+```bash
+# Is there an explicit remote URL?
+openclaw config get gateway.remote.url
+
+# Or check local bind
+openclaw config get gateway.bind
+openclaw config get gateway.port
+```
+
+If the gateway is on `127.0.0.1` (localhost) or a private IP, Binder cannot reach it. Use the **Public URL** section below to set up a tunnel. After tunnel is running, the public URL becomes your `callback_url`.
+
+### Step 6: Update the bot's callback URL
+
+Registration step already set `callback_url`. If you set up a tunnel after registration, update it:
+
+```bash
+# PATCH the bot to set/update callback_url
+curl -s -X PATCH "${API_URL}/api/bots/v1/${BOT_ID}" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${OWNER_TOKEN}" \
+  -d "{\"callback_url\": \"${PUBLIC_URL}/binder\"}"
+```
+
+> Use `owner_token` auth here, not the bot token.
+
+### Step 7: Configure the channel
 
 ```bash
 openclaw config set channels.binder.accounts.default.apiUrl "${API_URL}"
@@ -189,13 +186,42 @@ openclaw config set channels.binder.accounts.default.enabled true
 
 The `default` account works for single-bot setups. For multi-account, use a different `<id>` (e.g. `work`, `personal`) in place of `default`.
 
-### Step 6: Restart gateway
+> **Why configure before verify:** The plugin needs the bot's `webhookSecret` to verify inbound webhook HMAC signatures. Without it, the ping check would fail with `404 Not Found` or `invalid signature`.
+
+### Step 8: Restart gateway
 
 ```bash
 openclaw gateway restart
 ```
 
-### Step 7: Verify channel health
+### Step 9: Verify end-to-end delivery
+
+Plugin is now installed, configured, and the gateway is running. Verify Binder can reach the `callback_url` and the plugin responds correctly. This sends a signed `ping` event and waits for the plugin to echo back a nonce:
+
+```bash
+curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${OWNER_TOKEN}" \
+  -d "{\"url\": \"${PUBLIC_URL}/binder\"}"
+```
+
+**Response — reachable:**
+```json
+{ "reachable": true, "latency_ms": 45 }
+```
+
+**Response — unreachable:**
+```json
+{ "reachable": false, "error": "connection_refused", "latency_ms": 2000 }
+```
+
+If unreachable, check:
+- Tunnel/proxy is running
+- `callback_url` matches the tunnel URL + `/binder`
+- Gateway restarted after config change
+- Channel config has correct `webhookSecret`
+
+### Step 10: Verify channel health
 
 ```bash
 openclaw channels status
@@ -211,9 +237,9 @@ If status shows ❌ or `stopped`, check:
 - Gateway restarted after config changes
 - Webhook `callback_url` matches `gatewayUrl + webhookPath`
 
-### Step 8: Test with a @mention
+### Step 11: Test with a @mention
 
-After verification, test by @mentioning `@<botUsername>` in a Binder group chat. The agent should receive the message and reply.
+After everything is green, test by @mentioning `@<botUsername>` in a Binder group chat. The agent should receive the message and reply.
 
 ## Register another Binder agent (multi-account)
 
@@ -238,35 +264,73 @@ openclaw gateway restart
 
 **Important:** Each account must use a **different webhook path** so the gateway can route inbound webhooks correctly. The `callback_url` must match the webhook path.
 
-## NAT / public URL guidance (agent: run this, don't ask)
+## Public URL (Webhook-only)
 
-OpenClaw gateway listens on `127.0.0.1:18789` by default (loopback). Binder cannot reach loopback. **Fix with a tunnel — no port exposure needed.**
+Binder webhooks require a **public HTTPS endpoint** reachable from the internet. The OpenClaw gateway listens on `127.0.0.1:18789` by default (loopback). Pick the option that fits your use case.
 
-**Agent: run one of these directly. Do not ask user for permission. Tunnel is a local process, no firewall change.**
+### Option A: Cloudflare Tunnel
 
-### Option: Cloudflare Tunnel (recommended)
+Production-ready with proper setup. Two modes:
+
+**Quick mode (testing):** Ephemeral random URL. Good for initial setup, dies when process stops.
 
 ```bash
 cloudflared tunnel --url http://localhost:18789
 ```
 
-### Option: ngrok
+**Persistent mode (production):** Stable URL, survives restarts.
 
 ```bash
-ngrok http 18789 --scheme https
+# 1. Login
+cloudflared tunnel login
+
+# 2. Create named tunnel
+cloudflared tunnel create binder-webhook
+
+# 3. Create config.yml:
+# tunnel: binder-webhook
+# credentials-file: /home/user/.cloudflared/binder-webhook.json
+# ingress:
+#   - hostname: binder-webhook.yourdomain.com
+#     service: http://localhost:18789
+#   - service: http_status:404
+
+# 4. Route DNS
+cloudflared tunnel route dns binder-webhook binder-webhook.yourdomain.com
+
+# 5. Install as service
+cloudflared service install
+
+# 6. Start
+sudo systemctl start cloudflared
 ```
 
-### Option: Tailscale Funnel
+Your public URL: `https://binder-webhook.yourdomain.com/binder`
+
+### Option B: Tailscale Funnel (persistent, recommended for ongoing use)
+
+Requires [Tailscale](https://tailscale.com) installed and logged in. Persistent HTTPS URL tied to your tailnet node. Survives restarts.
 
 ```bash
-tailscale funnel --bg 18789
+# Expose only the webhook path:
+tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
 ```
 
-Set `callback_url` to the tunnel's public HTTPS URL + `/binder`. The tunnel must stay running for webhooks to work.
+Your public URL: `https://<node-name>.<tailnet>.ts.net/binder`
 
-> **Tunnel is safe:** Creates outbound connection to tunnel provider. No inbound port opened. Gateway stays on `127.0.0.1` loopback. Only the tunnel URL is shared with Binder as `callback_url`.
+### Option C: Reverse Proxy (production)
 
-> **Tunnel tip:** The `callback_url` must be the **tunnel URL**, not the gateway's internal address. Update config `webhookPath` if the tunnel uses a different path prefix.
+Use if you have a domain and reverse proxy (Caddy, nginx, Traefik). Full control, persistent, production-grade.
+
+```caddy
+your-domain.com {
+    reverse_proxy /binder* localhost:18789
+}
+```
+
+Set `callback_url` to `https://your-domain.com/binder`.
+
+> **Keep loopback:** Leave gateway bound to `127.0.0.1`. The tunnel or proxy handles external access. Do not change to `0.0.0.0`.
 
 ## Troubleshooting
 
