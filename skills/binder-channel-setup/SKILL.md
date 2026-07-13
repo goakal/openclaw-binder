@@ -93,13 +93,15 @@ Wait for user to confirm before continuing.
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${OWNER_TOKEN}" \
   -d '{
     "name": "<agent-given-name>",
     "username": "<agent-given-username>.ai",
-    "callback_url": "<gateway-public-url>/binder"
+    "callback_url": "<gateway-public-url>/binder",
+    "owner_token": "'"${OWNER_TOKEN}"'"
   }'
 ```
+
+> **Auth:** this endpoint is **unauthenticated**. The `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot would register unclaimed (returning a `claim_code` instead of being linked to your account).
 
 **Required fields:**
 - `name` — human-friendly bot name (e.g. "My OpenClaw")
@@ -130,8 +132,7 @@ Save these for the next step:
 
 **Error responses:**
 - `409` — username already taken. Pick a different `username`.
-- `401` — invalid or expired `owner_token`.
-- `400` — missing/invalid fields.
+- `400` — missing/invalid fields, or invalid/expired `owner_token` (this route is unauthenticated, so a bad owner token is a `400`, not a `401`).
 
 ### Step 4: Install the plugin
 
@@ -166,11 +167,12 @@ Registration step already set `callback_url`. If you set up a tunnel after regis
 # PATCH the bot to set/update callback_url
 curl -s -X PATCH "${API_URL}/api/bots/v1/${BOT_ID}" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${OWNER_TOKEN}" \
+  -H "Authorization: Bearer ${BOT_TOKEN}" \
+  -H "X-Bot-ID: ${BOT_ID}" \
   -d "{\"callback_url\": \"${PUBLIC_URL}/binder\"}"
 ```
 
-> Use `owner_token` auth here, not the bot token.
+> Use **bot auth** here (`Authorization: Bearer <token>` + `X-Bot-ID: <bot.id>`, both from the Step 3 registration response) — this route is wrapped in `BotAuthMiddleware`, not owner-token auth. `${BOT_TOKEN}` is the `token` returned at registration.
 
 ### Step 7: Configure the channel
 
@@ -201,7 +203,8 @@ Plugin is now installed, configured, and the gateway is running. Verify Binder c
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${OWNER_TOKEN}" \
+  -H "Authorization: Bearer ${BOT_TOKEN}" \
+  -H "X-Bot-ID: ${BOT_ID}" \
   -d "{\"url\": \"${PUBLIC_URL}/binder\"}"
 ```
 
@@ -247,8 +250,8 @@ Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, 
 
 ```bash
 # Register new bot (Step 3 with different username)
-curl -s -X POST "${API_URL}/api/bots/v1" -H "Authorization: Bearer ${OWNER_TOKEN}" \
-  -d '{"name": "...", "username": "<unique>.ai", "callback_url": "<gateway-url>/binder-2"}'
+curl -s -X POST "${API_URL}/api/bots/v1" -H "Content-Type: application/json" \
+  -d '{"name": "...", "username": "<unique>.ai", "callback_url": "<gateway-url>/binder-2", "owner_token": "'"${OWNER_TOKEN}"'"}'
 
 # Configure under a different account ID
 openclaw config set channels.binder.accounts.second.botId "<bot.id>"
