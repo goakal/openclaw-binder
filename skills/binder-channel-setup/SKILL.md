@@ -23,9 +23,10 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
 3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
 4. **Separate your work from the owner's work.** Steps 1–4 are yours. Step 5 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
-5. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
-6. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
-7. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
+5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner to choose between options you have not actually tried — e.g. do NOT ask "which tunnel option do you want?" before checking what's installed (`command -v cloudflared tailscale`) and running it. Ask only when a step needs something only the owner has (an account login, a software install, a domain), or after two failed attempts.
+6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
+7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
+8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
 
 ### The 5 steps you present to the owner
 
