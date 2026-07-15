@@ -253,7 +253,8 @@ openclaw config get gateway.port
       tunnel restarts, and the bot goes offline until I set it up again.
    2. Permanent link — survives restarts, the proper long-term setup.
       Needs a bit from you: <a Cloudflare login + a domain you own |
-      a Tailscale login>.
+      a Tailscale login> — I'll walk you through it click by click,
+      one step at a time.
 
    You can start with 1 now and I'll upgrade to 2 later.
    I need you to: pick 1 or 2.
@@ -292,29 +293,76 @@ After it's up, remind the owner: "Heads-up: this is the temporary link — it di
 
 **Cloudflare Tunnel — persistent mode** (owner chose 2, permanent — stable URL, production):
 
-```bash
-cloudflared tunnel login
-cloudflared tunnel create binder-webhook
-# config.yml:
-# tunnel: binder-webhook
-# credentials-file: /home/user/.cloudflared/binder-webhook.json
-# ingress:
-#   - hostname: binder-webhook.yourdomain.com
-#     service: http://localhost:18789
-#   - service: http_status:404
-cloudflared tunnel route dns binder-webhook binder-webhook.yourdomain.com
-cloudflared service install
-sudo systemctl start cloudflared
+Permanent setup mixes your work with the owner's. Rule for every owner touchpoint: pause, send ONE "I need you to" message with the exact link or command, say what they will see and what "done" looks like, then wait for their confirmation. One action per message — never a list of three things to go do.
+
+*2a. Check prerequisites (ask, owner-only knowledge):*
+
+```
+For the permanent link I need a Cloudflare account with a domain added
+to it (any domain you own works, even one you don't otherwise use).
+I need you to: tell me the domain — or say "no domain" and I'll use
+the Tailscale route instead (no domain needed).
 ```
 
-Public URL: `https://binder-webhook.yourdomain.com/binder`.
-Note: `cloudflared tunnel login` opens a browser — the owner must do that part. Say so with an "I need you to" line.
+If no domain and no Tailscale → fall back to the temporary tunnel and say why.
+
+*2b. Authorize (owner does the browser part):* run `cloudflared tunnel login`, capture the URL it prints, then:
+
+```
+I need you to: open this link, log in to Cloudflare, click your domain
+<domain>, then press "Authorize". Tell me "done" when the page says
+you can close it.
+→ <the URL cloudflared printed>
+```
+
+Wait for the owner. Verify `~/.cloudflared/cert.pem` now exists; if not, resend the link (counts toward two strikes).
+
+*2c. You do the rest (no asking):*
+
+```bash
+cloudflared tunnel create binder-webhook
+# write ~/.cloudflared/config.yml:
+# tunnel: binder-webhook
+# credentials-file: /home/<user>/.cloudflared/<tunnel-id>.json
+# ingress:
+#   - hostname: binder-webhook.<domain>
+#     service: http://localhost:18789
+#   - service: http_status:404
+cloudflared tunnel route dns binder-webhook binder-webhook.<domain>
+```
+
+*2d. Install as a service (may need the owner for sudo):* try `cloudflared service install && sudo systemctl start cloudflared`. If sudo needs a password you can't provide:
+
+```
+I need you to: run this one command in a terminal on this machine —
+it installs the tunnel as a background service so it survives reboots:
+  sudo cloudflared service install && sudo systemctl start cloudflared
+Tell me "done" when it finishes.
+```
+
+*2e. Verify before moving on:* `curl -sI https://binder-webhook.<domain>` returns a response (any HTTP status — you're checking DNS + tunnel, the webhook path comes later). DNS can take a minute; retry twice with a short wait before calling it a failure.
+
+Public URL: `https://binder-webhook.<domain>/binder`.
 
 **Tailscale Funnel** (owner chose 2, permanent — survives restarts, no domain needed):
+
+*T1. Check login:* `tailscale status`. If logged out, run `tailscale up`, capture the login URL it prints, and send:
+
+```
+I need you to: open this link and log in to Tailscale (create a free
+account if you don't have one). Tell me "done" when it says success.
+→ <the URL tailscale printed>
+```
+
+*T2. Start the funnel:*
 
 ```bash
 tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
 ```
+
+If the command prints an approval URL instead of starting (Funnel or HTTPS not yet enabled on the tailnet), send it to the owner the same way: "open this link and press Enable, tell me 'done'." Then re-run the command.
+
+*T3. Verify:* `tailscale funnel status` shows the path, and `curl -sI https://<node-name>.<tailnet>.ts.net/binder` responds.
 
 Public URL: `https://<node-name>.<tailnet>.ts.net/binder`.
 
