@@ -23,7 +23,7 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
 3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
 4. **Separate your work from the owner's work.** Steps 1–4 are yours. Step 5 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
-5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner to choose between options you have not actually tried — e.g. do NOT ask "which tunnel option do you want?" before checking what's installed (`command -v cloudflared tailscale`) and running it. Ask only when a step needs something only the owner has (an account login, a software install, a domain), or after two failed attempts.
+5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner technical choices you can resolve yourself — e.g. do NOT ask which tunnel *tool* to use; check what's installed (`command -v cloudflared tailscale`) and pick one. Ask only when a step needs something only the owner has (an account login, a software install, a domain), after two failed attempts, or for a genuine product decision that outlives setup — currently exactly one: the temporary-vs-permanent tunnel question in Step 3.
 6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
 7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
 8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
@@ -107,6 +107,14 @@ I need you to: <exact action — command to run, thing to install, or link to cl
 
 I'll reply in the group when your message arrives.
 I need you to: do step 5 and tell me if I don't reply within a minute.
+```
+
+If the owner chose the temporary tunnel in Step 3, append to the Done message:
+
+```
+⏳ Reminder: your bot runs on a temporary link — it goes offline if
+this machine or the tunnel restarts. Say "make it permanent" anytime
+and I'll set up the stable link.
 ```
 
 ## When to use
@@ -235,7 +243,23 @@ openclaw config get gateway.port
    ```bash
    command -v cloudflared; command -v tailscale
    ```
-3. **A tunnel tool exists** → run it directly (commands below) — do NOT ask the owner for permission first. A tunnel is safe: it creates an outbound connection to the tunnel provider, opens no inbound port, changes no firewall rule, and the gateway stays on loopback. If the tunnel comes up, you have your public URL. Done.
+3. **A tunnel tool exists** → ask the owner ONE question before running it — temporary or permanent (template below). This is a real owner decision because it affects whether the bot survives a restart; it is NOT a safety question. Pick the tool yourself from what's installed — do not ask which tool, and do not ask permission to tunnel. A tunnel is safe: it creates an outbound connection to the tunnel provider, opens no inbound port, changes no firewall rule, and the gateway stays on loopback.
+
+   ```
+   My gateway needs a public link so Binder can reach it. Two ways:
+
+   1. Quick temporary link (recommended to start) — works in seconds,
+      no login needed. Downside: the link dies if this machine or the
+      tunnel restarts, and the bot goes offline until I set it up again.
+   2. Permanent link — survives restarts, the proper long-term setup.
+      Needs a bit from you: <a Cloudflare login + a domain you own |
+      a Tailscale login>.
+
+   You can start with 1 now and I'll upgrade to 2 later.
+   I need you to: pick 1 or 2.
+   ```
+
+   Then run the chosen mode (commands below). If the tunnel comes up, you have your public URL. Done.
 4. **No tunnel tool installed, or tunnel fails twice** → STOP. This is not solvable alone: installing software and logging into tunnel accounts are owner decisions. Send a Blocked message like:
 
 ```
@@ -258,15 +282,15 @@ Never retry the same failing tunnel command more than twice. Never silently wait
 
 ### Tunnel commands
 
-**Cloudflare Tunnel — quick mode** (ephemeral URL, fine for first setup):
+**Cloudflare Tunnel — quick mode** (owner chose 1, temporary — ephemeral URL):
 
 ```bash
 cloudflared tunnel --url http://localhost:18789
 ```
 
-Tell the owner: "This link changes if the machine restarts — I can help set up a permanent one later."
+After it's up, remind the owner: "Heads-up: this is the temporary link — it dies if this machine or the tunnel restarts, and the bot goes offline until I recreate it. Say 'make it permanent' anytime and I'll upgrade it."
 
-**Cloudflare Tunnel — persistent mode** (stable URL, production):
+**Cloudflare Tunnel — persistent mode** (owner chose 2, permanent — stable URL, production):
 
 ```bash
 cloudflared tunnel login
@@ -286,7 +310,7 @@ sudo systemctl start cloudflared
 Public URL: `https://binder-webhook.yourdomain.com/binder`.
 Note: `cloudflared tunnel login` opens a browser — the owner must do that part. Say so with an "I need you to" line.
 
-**Tailscale Funnel** (persistent, survives restarts):
+**Tailscale Funnel** (owner chose 2, permanent — survives restarts, no domain needed):
 
 ```bash
 tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
