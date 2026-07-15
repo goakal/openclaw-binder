@@ -5,14 +5,29 @@ Chat with your AI assistant from Binder group chats via @mentions.
 > **For users:** Paste this prompt to your OpenClaw agent to set up Binder:
 >
 > ```
-> Set up Binder on my OpenClaw gateway.
-> Install plugin from https://github.com/goakal/openclaw-binder (download latest .tgz, openclaw plugins install, gateway restart).
-> Then use the binder-channel-setup skill to register.
+> Connect yourself to Binder — a group-chat app — so my groups can talk
+> to you by @mentioning your bot.
+>
 > Owner token: <your-owner-token-from-binder-account-settings>
 > Binder API URL: https://api.heybinder.com
+> Setup guide: https://github.com/goakal/openclaw-binder
+> (install the plugin from there, then follow its binder-channel-setup skill)
+>
+> HOW TO WORK WITH ME DURING SETUP — these rules override your defaults:
+> - Before running anything, tell me in plain words what Binder is and
+>   show the 5-step plan as a checklist (✅ done / ⏳ doing / 🔲 todo /
+>   🙋 needs me). Update the checklist after every step.
+> - No raw command output, JSON, or jargon — translate everything into
+>   one plain sentence.
+> - Mark clearly which steps are yours and which are mine.
+> - If a step fails twice, STOP retrying. Tell me what's stuck in plain
+>   words, give 2–3 options with your recommendation, and tell me
+>   exactly what to do or click.
+> - Never show me tokens or secrets.
+> - End every message with either "Next, I will …" or "I need you to …".
 > ```
 >
-> The agent reads this document, installs the plugin, registers your bot, and configures the channel.
+> The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group).
 
 ## What this is
 
@@ -59,17 +74,17 @@ Source install compiles against your local OpenClaw SDK. If an SDK update breaks
 
 ## Bootstrap flow (what the agent does)
 
-After you paste the prompt above, the agent:
+After you paste the prompt above, the agent presents this 5-step plan and keeps a running checklist:
 
-1. Reads this guide
-2. Installs the plugin (Option A or B)
-3. Resolves the Binder API URL (your provided URL or default `https://binder.openclaw.ai`)
-4. Checks if your gateway is **publicly reachable** from Binder — if behind NAT/localhost, guides through tunnel setup
-5. Registers a bot via `POST {apiUrl}/api/bots/v1` with owner token
-6. Writes channel config (`channels.binder.accounts.default.*`)
-7. Restarts the gateway
-8. Verifies with `openclaw channels status`
-9. Confirms setup is complete
+| # | Step | Who | Under the hood |
+|---|------|-----|----------------|
+| 1 | Install the Binder plugin | Agent | Download latest .tgz, `openclaw plugins install` |
+| 2 | Register your bot | Agent | `POST {apiUrl}/api/bots/v1` with your owner token |
+| 3 | Make the gateway reachable | Agent (+ you if a tunnel tool must be installed) | Detect localhost/NAT, set up cloudflared / Tailscale Funnel / reverse proxy, `PATCH` callback URL |
+| 4 | Connect and verify | Agent | Write `channels.binder.accounts.default.*` config, restart gateway, `verify-callback` ping, `channels status` |
+| 5 | Add the bot to a group and say hi | **You** | Open Binder, invite `@<bot>.ai`, @mention it |
+
+If the agent gets blocked (most commonly step 3 — no public URL), it stops, explains the problem in plain words, and offers options instead of retrying silently. See the **owner communication protocol** at the top of `skills/binder-channel-setup/SKILL.md`.
 
 ### Register another bot
 
