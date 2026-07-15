@@ -20,6 +20,8 @@ Chat with your AI assistant from Binder group chats via @mentions.
 > - No raw command output, JSON, or jargon — translate everything into
 >   one plain sentence.
 > - Mark clearly which steps are yours and which are mine.
+> - After showing the plan, proceed on your own — never ask me to choose
+>   between options you haven't actually tried.
 > - If a step fails twice, STOP retrying. Tell me what's stuck in plain
 >   words, give 2–3 options with your recommendation, and tell me
 >   exactly what to do or click.

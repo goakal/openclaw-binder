@@ -23,9 +23,17 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
 3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
 4. **Separate your work from the owner's work.** Steps 1–4 are yours. Step 5 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
-5. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
-6. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
-7. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
+5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner to choose between options you have not actually tried — e.g. do NOT ask "which tunnel option do you want?" before checking what's installed (`command -v cloudflared tailscale`) and running it. Ask only when a step needs something only the owner has (an account login, a software install, a domain), or after two failed attempts.
+6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
+7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
+8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
+9. **Retry in a dirty session: verify, don't remember.** If this setup was attempted before — in this conversation or an earlier one — do NOT trust conversation memory about what is done, what failed, or what the owner chose. Files, config, and this skill may all have changed since. Re-read this skill from disk, then verify actual state with commands:
+   ```bash
+   openclaw plugins list | grep binder
+   openclaw config get channels.binder.accounts
+   openclaw channels status
+   ```
+   Rebuild the checklist from what the commands show (✅ only what is verifiably done), continue from the first incomplete step, and re-attempt previously "stuck" steps fresh — a step that failed last time may work now.
 
 ### The 5 steps you present to the owner
 
@@ -108,6 +116,7 @@ I need you to: do step 5 and tell me if I don't reply within a minute.
 - "Install the Binder plugin"
 - "Update binder plugin" or "Upgrade binder plugin"
 - User provides a Binder `owner_token`
+- A previous Binder setup attempt is visible in this conversation (finish it — see protocol rule 9: verify state, don't trust memory)
 
 ## Prerequisites
 
@@ -129,6 +138,8 @@ Resolve the Binder API URL, in order:
 2. Default: `https://api.heybinder.com`
 
 Suggest a bot name + username (must end in `.ai`). Send the **Kickoff** template and wait for the owner's confirmation before continuing.
+
+**Retry?** If a previous attempt is visible in this conversation, skip the full Kickoff: verify actual state first (protocol rule 9), then send a **Progress** checklist reflecting verified state and continue from the first incomplete step. Don't re-ask questions the owner already answered (bot name, chosen options) — but do re-verify everything the machine controls.
 
 ## Step 1: Install the plugin
 
