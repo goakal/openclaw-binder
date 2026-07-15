@@ -1,6 +1,6 @@
 ---
 name: binder-channel-setup
-description: "Install the Binder channel plugin and register this OpenClaw gateway as a Binder bot via owner token. One-time transport setup; multi-account supported."
+description: "Install the Binder channel plugin and register this OpenClaw gateway as a Binder bot via owner token. One-time transport setup; multi-account supported. Guides the owner step-by-step in plain language."
 metadata:
   {
     "openclaw":
@@ -13,18 +13,93 @@ metadata:
 
 # Binder Channel Setup
 
-Set up this OpenClaw gateway to receive Binder @mention events and send replies.
+Connect this OpenClaw gateway to Binder — a group-chat app — so people in the owner's groups can talk to this agent by @mentioning it.
 
-**Agent flow:**
-1. Resolve env details (API URL, owner token) — present plan to user for confirmation
-2. Register bot on Binder backend
-3. Install the `@openclaw/binder` plugin on the gateway
-4. If gateway not publicly reachable — set up tunnel
-5. Update bot's `callback_url` to point at gateway
-6. Verify end-to-end webhook delivery
-7. Write channel config + restart + verify
+## READ THIS FIRST: how to communicate with your owner
 
-Once configured, the `binder` bundled skill handles capability discovery from the **live backend catalog** — no per-family skill updates needed.
+Your owner is a person setting up an app, not an engineer reading logs. The setup only feels seamless if you narrate it well. These rules override your default reporting style:
+
+1. **Send the Kickoff message BEFORE running any command** (template below). It explains what Binder is and shows the 5-step plan.
+2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
+3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
+4. **Separate your work from the owner's work.** Steps 1–4 are yours. Step 5 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
+5. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
+6. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
+7. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
+
+### The 5 steps you present to the owner
+
+| # | Step | Who does it |
+|---|------|-------------|
+| 1 | Install the Binder plugin on this gateway | Me (agent) |
+| 2 | Register your bot on Binder | Me (agent) |
+| 3 | Make this gateway reachable from the internet | Me — may need your help |
+| 4 | Connect and verify everything works | Me (agent) |
+| 5 | Add the bot to a group and say hi | You (owner) |
+
+### Message templates
+
+**Kickoff** (send first, before any command):
+
+```
+Binder is a group-chat app. I'm going to connect myself to it as a bot,
+so people in your groups can talk to me by @mentioning me.
+
+Here's the plan — 5 steps:
+🔲 1. Install the Binder plugin on my gateway (me)
+🔲 2. Register your bot on Binder (me)
+🔲 3. Make my gateway reachable from the internet (me — I may need your help)
+🔲 4. Connect and verify everything works (me)
+🔲 5. You add the bot to a group and say hi (you)
+
+I'd like to name the bot "<suggested name>" with the handle
+@<suggested-username>.ai — reply "go" to accept, or tell me a
+different name.
+
+I need you to: confirm the name (or just say "go").
+```
+
+**Progress** (after each completed step):
+
+```
+✅ 1. Plugin installed
+✅ 2. Bot registered as @<username>.ai
+⏳ 3. Making my gateway reachable — working on it
+🔲 4. Connect and verify
+🔲 5. You add the bot to a group
+
+Next, I will <one plain sentence>.
+```
+
+**Blocked** (after the same step fails twice):
+
+```
+⚠️ I'm stuck on step <N>: <one plain sentence, no jargon>.
+
+Your options:
+1. <option> (recommended — <why>)
+2. <option>
+3. <option, if any>
+
+I need you to: <exact action — command to run, thing to install, or link to click>.
+```
+
+**Done** (after step 4 verifies green):
+
+```
+🎉 Setup complete — only your part is left.
+
+✅ 1–4 done. Your bot @<username>.ai is live and connected.
+
+🙋 5. Your turn:
+   1. Open Binder (app or web)
+   2. Go to any group chat (or create one)
+   3. Add @<username>.ai as a member
+   4. Send: "@<username>.ai hello!"
+
+I'll reply in the group when your message arrives.
+I need you to: do step 5 and tell me if I don't reply within a minute.
+```
 
 ## When to use
 
@@ -39,7 +114,31 @@ Once configured, the `binder` bundled skill handles capability discovery from th
 - OpenClaw gateway running (`openclaw gateway status`)
 - Binder backend `api_url` + valid `owner_token` (obtained from Binder account settings)
 
-## Installation options
+If either is missing, send a Blocked message telling the owner where to get it (owner token: Binder app → Account Settings → AI Agents).
+
+---
+
+# Technical runbook
+
+Internal procedure for the 5 owner-visible steps. Report progress with the templates above; never dump these commands' output at the owner.
+
+## Step 0: Resolve inputs + send Kickoff
+
+Resolve the Binder API URL, in order:
+1. User-provided `api_url` / `Binder API URL` from the prompt
+2. Default: `https://api.heybinder.com`
+
+Suggest a bot name + username (must end in `.ai`). Send the **Kickoff** template and wait for the owner's confirmation before continuing.
+
+## Step 1: Install the plugin
+
+Check first:
+
+```bash
+openclaw plugins list | grep binder
+```
+
+If already installed, mark step 1 ✅ and continue.
 
 ### Option A: Prebuilt release (primary, no build toolchain)
 
@@ -59,54 +158,27 @@ npm run build         # compiles against local OpenClaw SDK — surfaces drift e
 openclaw plugins install --link ./openclaw-binder
 ```
 
-## Registration workflow
+**If install fails twice** → Blocked message. Likely options: no network on gateway host, GitHub unreachable, OpenClaw version too old (needs >= 2026.5.6 — check `openclaw --version`).
 
-### Step 1: Resolve the Binder API URL
-
-Check in order:
-1. User-provided `api_url` or `Binder API URL` from prompt
-2. Default: `https://api.heybinder.com`
-
-If prompt includes `Binder API URL`, use it directly. Ask user if unsure.
-
-### Step 2: Present plan to user
-
-Before doing anything, summarize what you're about to do and show the user:
-
-```
-I'll register a new Binder bot with:
-  - Name: <generated-name>
-  - Username: <generated-username>.ai
-  - API URL: <api-url>
-  - Owner token: <masked>
-  
-Then install the binder plugin on this gateway and
-configure the channel.
-
-Proceed? (y/n)
-```
-
-Wait for user to confirm before continuing.
-
-### Step 3: Register the bot with Binder
+## Step 2: Register the bot
 
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "<agent-given-name>",
-    "username": "<agent-given-username>.ai",
+    "name": "<confirmed-name>",
+    "username": "<confirmed-username>.ai",
     "callback_url": "<gateway-public-url>/binder",
     "owner_token": "'"${OWNER_TOKEN}"'"
   }'
 ```
 
-> **Auth:** this endpoint is **unauthenticated**. The `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot would register unclaimed (returning a `claim_code` instead of being linked to your account).
+> **Auth:** this endpoint is **unauthenticated**. The `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot would register unclaimed (returning a `claim_code` instead of being linked to the owner's account).
 
 **Required fields:**
 - `name` — human-friendly bot name (e.g. "My OpenClaw")
-- `username` — unique handle, must end in `.ai` (e.g. "my-openclaw.ai"). The `.ai` suffix is mandatory — Binder reserves it for AI agents.
-- `callback_url` — where Binder sends webhook events. Must be **public HTTPS** + resolves to this gateway. Path should be `/binder` (matches plugin default webhook path).
+- `username` — unique handle, must end in `.ai`. The `.ai` suffix is mandatory — Binder reserves it for AI agents.
+- `callback_url` — where Binder sends webhook events. Must be **public HTTPS**. If you don't have a public URL yet, register with your best guess and update it in Step 3 via PATCH.
 
 **Success response (201):**
 ```json
@@ -122,49 +194,112 @@ curl -s -X POST "${API_URL}/api/bots/v1" \
 }
 ```
 
-Save these for the next step:
+Save these for Step 4:
 - `bot.id` → `botId`
 - `bot.username` → `botUsername`
 - `token` (shown once)
 - `webhook_secret` (shown once)
 
-> **Security:** The `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the user.
+> **Security:** `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the owner.
 
-**Error responses:**
-- `409` — username already taken. Pick a different `username`.
-- `400` — missing/invalid fields, or invalid/expired `owner_token` (this route is unauthenticated, so a bad owner token is a `400`, not a `401`).
+**Error handling (translate for the owner — don't paste JSON):**
+- `409` — "That bot name is taken." Suggest 2 alternatives, ask owner to pick, retry. Does NOT count as a strike.
+- `400` with an owner-token error — Blocked message: "Your Binder token isn't valid — it may have been regenerated. Please copy a fresh one from Binder → Account Settings → AI Agents and paste it here." (This route is unauthenticated, so a bad owner token is a `400`, not a `401`.)
+- `400` for anything else — fix the request yourself (field format issue); counts as a strike.
 
-### Step 4: Install the plugin
+## Step 3: Make the gateway reachable (the step that usually blocks)
 
-Install the `@openclaw/binder` plugin on the gateway. See **Installation options** above for prebuilt .tgz or source install.
-
-```bash
-openclaw plugins list | grep binder
-```
-
-If plugin not listed, run install steps from the **Installation options** section.
-
-### Step 5: Set up public URL if needed
-
-Check if gateway has a public HTTPS URL Binder can reach:
+Check whether the gateway already has a public HTTPS URL:
 
 ```bash
-# Is there an explicit remote URL?
 openclaw config get gateway.remote.url
-
-# Or check local bind
 openclaw config get gateway.bind
 openclaw config get gateway.port
 ```
 
-If the gateway is on `127.0.0.1` (localhost) or a private IP, Binder cannot reach it. Use the **Public URL** section below to set up a tunnel. After tunnel is running, the public URL becomes your `callback_url`.
+**Decision tree — follow it, do not loop:**
 
-### Step 6: Update the bot's callback URL
+1. `gateway.remote.url` set and public HTTPS → use it. Done.
+2. Bind is `127.0.0.1` / private IP (the default) → Binder **cannot** reach this gateway. A tunnel is required. Check what's available:
+   ```bash
+   command -v cloudflared; command -v tailscale
+   ```
+3. **A tunnel tool exists** → run it directly (commands below) — do NOT ask the owner for permission first. A tunnel is safe: it creates an outbound connection to the tunnel provider, opens no inbound port, changes no firewall rule, and the gateway stays on loopback. If the tunnel comes up, you have your public URL. Done.
+4. **No tunnel tool installed, or tunnel fails twice** → STOP. This is not solvable alone: installing software and logging into tunnel accounts are owner decisions. Send a Blocked message like:
 
-Registration step already set `callback_url`. If you set up a tunnel after registration, update it:
+```
+⚠️ I'm stuck on step 3: my gateway runs on this machine only, and Binder
+(on the internet) has no way to reach it. I need a tunnel, and there's
+no tunnel tool installed that I can use.
+
+Your options:
+1. Cloudflare Tunnel (recommended — free, quickest): install with
+   <one-line install command for this OS>, then I'll handle the rest.
+2. Tailscale Funnel (best if you already use Tailscale): install
+   Tailscale and log in, then I'll expose only the webhook path.
+3. You already have a domain + reverse proxy? Tell me the domain and
+   I'll give you the exact proxy rule.
+
+I need you to: pick an option (1, 2, or 3).
+```
+
+Never retry the same failing tunnel command more than twice. Never silently wait.
+
+### Tunnel commands
+
+**Cloudflare Tunnel — quick mode** (ephemeral URL, fine for first setup):
 
 ```bash
-# PATCH the bot to set/update callback_url
+cloudflared tunnel --url http://localhost:18789
+```
+
+Tell the owner: "This link changes if the machine restarts — I can help set up a permanent one later."
+
+**Cloudflare Tunnel — persistent mode** (stable URL, production):
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create binder-webhook
+# config.yml:
+# tunnel: binder-webhook
+# credentials-file: /home/user/.cloudflared/binder-webhook.json
+# ingress:
+#   - hostname: binder-webhook.yourdomain.com
+#     service: http://localhost:18789
+#   - service: http_status:404
+cloudflared tunnel route dns binder-webhook binder-webhook.yourdomain.com
+cloudflared service install
+sudo systemctl start cloudflared
+```
+
+Public URL: `https://binder-webhook.yourdomain.com/binder`.
+Note: `cloudflared tunnel login` opens a browser — the owner must do that part. Say so with an "I need you to" line.
+
+**Tailscale Funnel** (persistent, survives restarts):
+
+```bash
+tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
+```
+
+Public URL: `https://<node-name>.<tailnet>.ts.net/binder`.
+
+**Reverse proxy** (owner has a domain):
+
+```caddy
+your-domain.com {
+    reverse_proxy /binder* localhost:18789
+}
+```
+
+Public URL: `https://your-domain.com/binder`.
+
+> **Keep loopback:** Leave the gateway bound to `127.0.0.1`. The tunnel or proxy handles external access. Do not change to `0.0.0.0`.
+
+### Update the bot's callback URL
+
+If the public URL was obtained (or changed) after registration:
+
+```bash
 curl -s -X PATCH "${API_URL}/api/bots/v1/${BOT_ID}" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${BOT_TOKEN}" \
@@ -172,9 +307,11 @@ curl -s -X PATCH "${API_URL}/api/bots/v1/${BOT_ID}" \
   -d "{\"callback_url\": \"${PUBLIC_URL}/binder\"}"
 ```
 
-> Use **bot auth** here (`Authorization: Bearer <token>` + `X-Bot-ID: <bot.id>`, both from the Step 3 registration response) — this route is wrapped in `BotAuthMiddleware`, not owner-token auth. `${BOT_TOKEN}` is the `token` returned at registration.
+> Use **bot auth** here (`Authorization: Bearer <token>` + `X-Bot-ID: <bot.id>`, both from the Step 2 registration response) — this route is wrapped in `BotAuthMiddleware`, not owner-token auth. `${BOT_TOKEN}` is the `token` returned at registration.
 
-### Step 7: Configure the channel
+## Step 4: Connect and verify
+
+### 4a. Write channel config
 
 ```bash
 openclaw config set channels.binder.accounts.default.apiUrl "${API_URL}"
@@ -186,19 +323,19 @@ openclaw config set channels.binder.accounts.default.webhookPath "/binder"
 openclaw config set channels.binder.accounts.default.enabled true
 ```
 
-The `default` account works for single-bot setups. For multi-account, use a different `<id>` (e.g. `work`, `personal`) in place of `default`.
+The `default` account works for single-bot setups. For multi-account, use a different `<id>` (e.g. `work`, `personal`).
 
-> **Why configure before verify:** The plugin needs the bot's `webhookSecret` to verify inbound webhook HMAC signatures. Without it, the ping check would fail with `404 Not Found` or `invalid signature`.
+> **Why configure before verify:** The plugin needs `webhookSecret` to verify inbound webhook HMAC signatures. Without it, the ping check fails with `404` or `invalid signature`.
 
-### Step 8: Restart gateway
+### 4b. Restart gateway
 
 ```bash
 openclaw gateway restart
 ```
 
-### Step 9: Verify end-to-end delivery
+### 4c. Verify end-to-end delivery
 
-Plugin is now installed, configured, and the gateway is running. Verify Binder can reach the `callback_url` and the plugin responds correctly. This sends a signed `ping` event and waits for the plugin to echo back a nonce:
+Sends a signed `ping` through Binder to the callback URL and waits for the plugin to echo a nonce:
 
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
@@ -208,48 +345,31 @@ curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
   -d "{\"url\": \"${PUBLIC_URL}/binder\"}"
 ```
 
-**Response — reachable:**
-```json
-{ "reachable": true, "latency_ms": 45 }
-```
+> Bot auth again (`BOT_TOKEN` + `X-Bot-ID`), same as the PATCH above.
 
-**Response — unreachable:**
-```json
-{ "reachable": false, "error": "connection_refused", "latency_ms": 2000 }
-```
+Reachable: `{ "reachable": true, "latency_ms": 45 }` — continue.
+Unreachable: `{ "reachable": false, "error": "connection_refused" }` — check in order: tunnel still running, `callback_url` matches tunnel URL + `/binder`, gateway restarted after config, `webhookSecret` correct. Two failed fix attempts → Blocked message.
 
-If unreachable, check:
-- Tunnel/proxy is running
-- `callback_url` matches the tunnel URL + `/binder`
-- Gateway restarted after config change
-- Channel config has correct `webhookSecret`
-
-### Step 10: Verify channel health
+### 4d. Verify channel health
 
 ```bash
 openclaw channels status
 ```
 
-Look for:
-```
-binder  default  ✅  running  apiUrl=${API_URL}  botUsername=my-openclaw.ai  webhookPath=/binder
-```
+Expect: `binder  default  ✅  running ...`. If ❌/stopped: check config values match the registration response exactly, gateway restarted, no other plugin on the same webhook path (`openclaw logs binder` for detail). Two failed fix attempts → Blocked message.
 
-If status shows ❌ or `stopped`, check:
-- Config values match registration response exactly
-- Gateway restarted after config changes
-- Webhook `callback_url` matches `gatewayUrl + webhookPath`
+## Step 5: Hand over to the owner
 
-### Step 11: Test with a @mention
+Everything green → send the **Done** template. Step 5 is the owner's: open Binder, add `@<botUsername>` to a group, @mention it. When the first webhook arrives and your reply lands, confirm in chat.
 
-After everything is green, test by @mentioning `@<botUsername>` in a Binder group chat. The agent should receive the message and reply.
+---
 
 ## Register another Binder agent (multi-account)
 
-Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, config entry, and webhook path.
+Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, config entry, and webhook path. Use the same owner-communication templates (the plan shrinks to steps 2, 4, 5 — plugin and tunnel already exist).
 
 ```bash
-# Register new bot (Step 3 with different username)
+# Register new bot (Step 2 with different username)
 curl -s -X POST "${API_URL}/api/bots/v1" -H "Content-Type: application/json" \
   -d '{"name": "...", "username": "<unique>.ai", "callback_url": "<gateway-url>/binder-2", "owner_token": "'"${OWNER_TOKEN}"'"}'
 
@@ -265,75 +385,7 @@ openclaw config set channels.binder.accounts.second.enabled true
 openclaw gateway restart
 ```
 
-**Important:** Each account must use a **different webhook path** so the gateway can route inbound webhooks correctly. The `callback_url` must match the webhook path.
-
-## Public URL (Webhook-only)
-
-Binder webhooks require a **public HTTPS endpoint** reachable from the internet. The OpenClaw gateway listens on `127.0.0.1:18789` by default (loopback). Pick the option that fits your use case.
-
-### Option A: Cloudflare Tunnel
-
-Production-ready with proper setup. Two modes:
-
-**Quick mode (testing):** Ephemeral random URL. Good for initial setup, dies when process stops.
-
-```bash
-cloudflared tunnel --url http://localhost:18789
-```
-
-**Persistent mode (production):** Stable URL, survives restarts.
-
-```bash
-# 1. Login
-cloudflared tunnel login
-
-# 2. Create named tunnel
-cloudflared tunnel create binder-webhook
-
-# 3. Create config.yml:
-# tunnel: binder-webhook
-# credentials-file: /home/user/.cloudflared/binder-webhook.json
-# ingress:
-#   - hostname: binder-webhook.yourdomain.com
-#     service: http://localhost:18789
-#   - service: http_status:404
-
-# 4. Route DNS
-cloudflared tunnel route dns binder-webhook binder-webhook.yourdomain.com
-
-# 5. Install as service
-cloudflared service install
-
-# 6. Start
-sudo systemctl start cloudflared
-```
-
-Your public URL: `https://binder-webhook.yourdomain.com/binder`
-
-### Option B: Tailscale Funnel (persistent, recommended for ongoing use)
-
-Requires [Tailscale](https://tailscale.com) installed and logged in. Persistent HTTPS URL tied to your tailnet node. Survives restarts.
-
-```bash
-# Expose only the webhook path:
-tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
-```
-
-Your public URL: `https://<node-name>.<tailnet>.ts.net/binder`
-
-### Option C: Reverse Proxy (production)
-
-Use if you have a domain and reverse proxy (Caddy, nginx, Traefik). Full control, persistent, production-grade.
-
-```caddy
-your-domain.com {
-    reverse_proxy /binder* localhost:18789
-}
-```
-
-Set `callback_url` to `https://your-domain.com/binder`.
-
-> **Keep loopback:** Leave gateway bound to `127.0.0.1`. The tunnel or proxy handles external access. Do not change to `0.0.0.0`.
+**Important:** Each account must use a **different webhook path** so the gateway can route inbound webhooks. The `callback_url` must match the webhook path.
 
 ## Troubleshooting
 
@@ -348,13 +400,12 @@ If `binder` not listed, re-run install. For source install (`--link`), verify th
 ### Channel status shows ❌ / stopped
 
 ```bash
-# Check logs
 openclaw logs binder
 ```
 
 Common causes:
 - `apiUrl` points at wrong backend
-- `token` or `webhook_secret` mistyped (they are long random strings)
+- `token` or `webhook_secret` mistyped (long random strings)
 - Gateway not restarted after config change
 - Another plugin registered the same webhook path
 
@@ -370,7 +421,7 @@ Common causes:
 curl -s "${API_URL}/api/bots/v1/ping"
 ```
 
-If the ping endpoint doesn't respond, Binder may be down or the URL is wrong.
+If the ping endpoint doesn't respond, Binder may be down or the URL is wrong. Tell the owner in plain words and suggest checking the URL in their prompt.
 
 ## Self-patch (plugin SDK drift)
 
@@ -394,7 +445,6 @@ openclaw logs binder | grep -i "import\|plugin\|error"
 1. **Discover the current SDK exports** in the host OpenClaw installation:
 
 ```bash
-# Find the SDK module
 find /usr/lib/node_modules/openclaw -name "package.json" -path "*/plugin-sdk/*" -maxdepth 5 2>/dev/null
 # or
 npm explore openclaw -- cat node_modules/openclaw/plugin-sdk/exports.json 2>/dev/null
@@ -410,13 +460,13 @@ Files with SDK imports:
 - `src/accounts.ts` — `account-helpers`, `account-id`, `config-contracts`
 - `src/runtime.ts` — `runtime-store`, `plugin-runtime`
 
-3. **For each broken import**, update the path to match the host SDK's current exports. The exports are typically `openclaw/plugin-sdk/<module-name>`.
+3. **For each broken import**, update the path to match the host SDK's current exports (typically `openclaw/plugin-sdk/<module-name>`).
 
 4. **Rebuild and reinstall**:
 
 ```bash
 cd openclaw-binder
-npm install      # may update peerDep resolution
+npm install
 npm run build
 openclaw plugins install ./openclaw-binder
 openclaw gateway restart
@@ -424,29 +474,18 @@ openclaw gateway restart
 
 ### When to upstream
 
-If the import changes are mechanical (renamed paths, same exports), apply them locally. If the SDK's public API contract changed (different function signatures, removed exports), open an issue at `https://github.com/goakal/openclaw-binder` or submit a PR.
+If the import changes are mechanical (renamed paths, same exports), apply them locally. If the SDK's public API contract changed (different signatures, removed exports), open an issue at `https://github.com/goakal/openclaw-binder` or submit a PR.
 
 The thin plugin design means a full port takes ~15 minutes once the SDK changes are understood.
 
 ## Update plugin
 
-Update to latest release when a new version is available.
-
 ```bash
-# Get latest version
 VERSION=$(curl -sL https://api.github.com/repos/goakal/openclaw-binder/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
 VERSION=${VERSION#v}
-
-# Download
 curl -sLO "https://github.com/goakal/openclaw-binder/releases/download/v${VERSION}/binder-${VERSION}.tgz"
-
-# Install (replaces old version)
 openclaw plugins install ./binder-${VERSION}.tgz
-
-# Restart
 openclaw gateway restart
-
-# Verify upgrade
 openclaw plugins list | grep binder
 openclaw channels status
 ```

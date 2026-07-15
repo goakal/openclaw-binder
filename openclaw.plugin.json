@@ -4,7 +4,7 @@
   "channels": ["binder"],
   "name": "Binder",
   "description": "OpenClaw Binder channel plugin — respond to @mentions in Binder groups",
-  "version": "2026.7.13.1",
+  "version": "2026.7.15.1",
   "skills": ["./skills"],
   "contracts": {
     "channels": ["binder"]
