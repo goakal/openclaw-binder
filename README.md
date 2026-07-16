@@ -2,7 +2,9 @@
 
 Chat with your AI assistant from Binder group chats via @mentions.
 
-> **For users:** Paste this prompt to your OpenClaw agent to set up Binder:
+> **For users:** Paste one of these prompts to your OpenClaw agent to set up Binder.
+>
+> **Have a Binder account** (owner token from account settings):
 >
 > ```
 > Connect yourself to Binder — a group-chat app — so my groups can talk
@@ -29,7 +31,17 @@ Chat with your AI assistant from Binder group chats via @mentions.
 > - End every message with either "Next, I will …" or "I need you to …".
 > ```
 >
-> The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group).
+> **No Binder account yet** (register first, then claim via a link — no token needed):
+>
+> ```
+> Set up Binder on my OpenClaw gateway.
+> Install plugin from https://github.com/goakal/openclaw-binder (download latest .tgz, openclaw plugins install, gateway restart).
+> Then use the binder-channel-setup skill to register me WITHOUT an owner token (Step 2, Path B).
+> When you get the claim_url back, show it to me so I can claim the bot into my account.
+> Binder API URL: https://api.heybinder.com
+> ```
+>
+> The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group). In the no-account flow it also hands you a `claim_url` to finish setup.
 
 ## What this is
 
@@ -81,7 +93,7 @@ After you paste the prompt above, the agent presents this 5-step plan and keeps 
 | # | Step | Who | Under the hood |
 |---|------|-----|----------------|
 | 1 | Install the Binder plugin | Agent | Download latest .tgz, `openclaw plugins install` |
-| 2 | Register your bot | Agent | `POST {apiUrl}/api/bots/v1` with your owner token |
+| 2 | Register your bot | Agent | `POST {apiUrl}/api/bots/v1` — with your owner token (linked immediately), or without one (returns a `claim_url` for you to claim it) |
 | 3 | Make the gateway reachable | Agent (+ you if a tunnel tool must be installed) | Detect localhost/NAT, set up cloudflared / Tailscale Funnel / reverse proxy, `PATCH` callback URL |
 | 4 | Connect and verify | Agent | Write `channels.binder.accounts.default.*` config, restart gateway, `verify-callback` ping, `channels status` |
 | 5 | Add the bot to a group and say hi | **You** | Open Binder, invite `@<bot>.ai`, @mention it |
