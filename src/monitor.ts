@@ -11,7 +11,7 @@ import {
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { ResolvedBinderAccount } from "./accounts.js";
-import { postBinderMessage } from "./api.js";
+import { postBinderMessage, uploadBinderMedia } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 import { setBinderLastMessageId } from "./channel.js";
 
@@ -309,13 +309,43 @@ async function processBinderEvent(
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
-        binderLog(verbose, `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}`);
+        // Collect any media the agent attached to this reply (URLs or local
+        // paths). Upload each to Binder as the bot, then send the message
+        // with the resulting attachment ids. A failed upload is logged and
+        // skipped so a broken image never drops the text reply.
+        const mediaSources = [
+          ...(payload.mediaUrl ? [payload.mediaUrl] : []),
+          ...(payload.mediaUrls ?? []),
+        ];
+        let attachmentIds: string[] | undefined;
+        if (mediaSources.length > 0) {
+          const ids: string[] = [];
+          for (const source of mediaSources) {
+            try {
+              const id = await uploadBinderMedia({
+                account,
+                ...(isDm ? { conversationId: apiPeerId } : { groupId: apiPeerId }),
+                source,
+              });
+              ids.push(id);
+            } catch (err) {
+              binderError(verbose, `deliver: media upload failed for ${source}: ${String(err)}`);
+            }
+          }
+          if (ids.length > 0) attachmentIds = ids;
+        }
+
+        binderLog(
+          verbose,
+          `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}, attachments=${attachmentIds?.length ?? 0}`,
+        );
         await postBinderMessage({
           account,
           groupId: apiPeerId,
           parentMessageId: replyTo,
           content: payload.text ?? "",
           isDm,
+          attachmentIds,
         });
         target.statusSink?.({ lastOutboundAt: Date.now() });
       },
