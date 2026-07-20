@@ -38,6 +38,13 @@ export type BinderMonitorOptions = {
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 };
 
+type BinderHistoryEntry = {
+  message_id: string;
+  content: string | null;
+  sender: { id: string; name: string; username: string | null };
+  timestamp: string;
+};
+
 type BinderInboundData = {
   message_id: string;
   content: string | null;
@@ -50,6 +57,12 @@ type BinderInboundData = {
   conversation_id?: string;
   pending_message_id?: string;
   nonce?: string;
+  /**
+   * Recent prior messages in the thread, oldest first. Only present when the
+   * Binder backend supports it — older backends omit the field, so callers
+   * must treat it as optional.
+   */
+  history?: BinderHistoryEntry[];
 };
 
 type BinderWebhookPayload = {
@@ -65,6 +78,19 @@ function verifyBinderSignature(body: string, signature: string, secret: string):
     return false;
   }
   return timingSafeEqual(a, b);
+}
+
+function formatHistoryContext(history: BinderHistoryEntry[] | undefined): string {
+  if (!history || history.length === 0) {
+    return "";
+  }
+  const lines = history
+    .filter((m) => (m.content ?? "").trim().length > 0)
+    .map((m) => `${m.sender.name || m.sender.username || m.sender.id}: ${m.content}`);
+  if (lines.length === 0) {
+    return "";
+  }
+  return `[Recent thread context]\n${lines.join("\n")}\n\n`;
 }
 
 function isTimestampFresh(timestampHeader: string | string[] | undefined): boolean {
@@ -229,6 +255,14 @@ async function processBinderEvent(
     return;
   }
 
+  // The webhook only carries the single triggering message; `history` (when
+  // the Binder backend sends it) adds the recent thread turns from other
+  // senders that this bot's local session never saw. Prepended as plain
+  // context, not folded into RawBody/CommandBody so command parsing still
+  // sees only the actual trigger message.
+  const historyContext = isDm ? "" : formatHistoryContext(data.history);
+  const bodyWithContext = historyContext + cleanBody;
+
   const core = getBinderRuntime();
   if (!core) {
     runtime.error?.(`[${account.accountId}] processBinderEvent: getBinderRuntime returned null/undefined`);
@@ -250,7 +284,7 @@ async function processBinderEvent(
     channel: "binder",
     from: data.sender.name || `user:${data.sender.id}`,
     timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
-    body: cleanBody,
+    body: bodyWithContext,
   });
 
   const replyTo = isDm ? (data.pending_message_id ?? "") : data.parent_message_id;
@@ -259,7 +293,7 @@ async function processBinderEvent(
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
-    BodyForAgent: cleanBody,
+    BodyForAgent: bodyWithContext,
     RawBody: rawBody,
     CommandBody: cleanBody,
     From: `binder:${data.sender.id}`,
