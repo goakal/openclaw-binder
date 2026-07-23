@@ -38,6 +38,9 @@ export type BinderMonitorOptions = {
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 };
 
+/** Binder's server-side limit on `attachment_ids` per message. */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
 /**
  * An attachment on an inbound Binder message. `url` is a public asset URL,
  * so it can be handed to the agent runtime as media without extra auth.
@@ -424,10 +427,19 @@ async function processBinderEvent(
         // paths). Upload each to Binder as the bot, then send the message
         // with the resulting attachment ids. A failed upload is logged and
         // skipped so a broken image never drops the text reply.
-        const mediaSources = [
+        const allMediaSources = [...new Set([
           ...(payload.mediaUrl ? [payload.mediaUrl] : []),
           ...(payload.mediaUrls ?? []),
-        ];
+        ])];
+        // Binder rejects the whole message above this count, which would
+        // drop the reply — cap and keep the first ten instead.
+        const mediaSources = allMediaSources.slice(0, MAX_ATTACHMENTS_PER_MESSAGE);
+        if (allMediaSources.length > mediaSources.length) {
+          binderError(
+            verbose,
+            `deliver: ${allMediaSources.length} media items, sending first ${MAX_ATTACHMENTS_PER_MESSAGE}`,
+          );
+        }
         let attachmentIds: string[] | undefined;
         if (mediaSources.length > 0) {
           const ids: string[] = [];
@@ -446,6 +458,14 @@ async function processBinderEvent(
           if (ids.length > 0) attachmentIds = ids;
         }
 
+        // Binder rejects a message with neither content nor attachments. If
+        // this was a media-only reply and every upload failed, send a
+        // placeholder instead of a 400 that would drop the turn entirely.
+        let content = payload.text ?? "";
+        if (!content.trim() && !attachmentIds && mediaSources.length > 0) {
+          content = "[media upload failed]";
+        }
+
         binderLog(
           verbose,
           `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}, attachments=${attachmentIds?.length ?? 0}`,
@@ -454,7 +474,7 @@ async function processBinderEvent(
           account,
           groupId: apiPeerId,
           parentMessageId: replyTo,
-          content: payload.text ?? "",
+          content,
           isDm,
           attachmentIds,
         });
