@@ -124,12 +124,14 @@ and I'll set up the stable link.
 - "Install the Binder plugin"
 - "Update binder plugin" or "Upgrade binder plugin"
 - User provides a Binder `owner_token`
+- User has **no** Binder account/token yet and wants to get started (claim-link flow)
 - A previous Binder setup attempt is visible in this conversation (finish it — see protocol rule 9: verify state, don't trust memory)
 
 ## Prerequisites
 
 - OpenClaw gateway running (`openclaw gateway status`)
-- Binder backend `api_url` + valid `owner_token` (obtained from Binder account settings)
+- Binder backend `api_url`
+- Optionally a valid `owner_token` (from Binder account settings). **Not required** — without one, registration returns a `claim_url` you give the user to claim the bot (Step 2, Path B).
 
 If either is missing, send a Blocked message telling the owner where to get it (owner token: Binder app → Account Settings → AI Agents).
 
@@ -181,6 +183,13 @@ openclaw plugins install --link ./openclaw-binder
 
 ## Step 2: Register the bot
 
+There are two registration paths. **Pick based on whether the user gave you an `owner_token`:**
+
+- **Have an owner token** (user copied a prompt from Binder account settings) → **Path A** (owned registration). Bot is linked to their account immediately.
+- **No owner token** (user started from the Binder homepage; may not even have a Binder account yet) → **Path B** (claim-link registration). Register unclaimed, then hand the user a `claim_url` to finish setup.
+
+#### Path A — with an owner token
+
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1" \
   -H "Content-Type: application/json" \
@@ -192,7 +201,23 @@ curl -s -X POST "${API_URL}/api/bots/v1" \
   }'
 ```
 
-> **Auth:** this endpoint is **unauthenticated**. The `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot would register unclaimed (returning a `claim_code` instead of being linked to the owner's account).
+#### Path B — no owner token (claim link)
+
+Omit `owner_token` entirely. Do **not** send an empty string or a Bearer header.
+
+```bash
+curl -s -X POST "${API_URL}/api/bots/v1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "<agent-given-name>",
+    "username": "<agent-given-username>.ai",
+    "callback_url": "<gateway-public-url>/binder"
+  }'
+```
+
+The response includes `claim_code` **and** `claim_url` (in addition to `token` + `webhook_secret`). **Show the owner the `claim_url` verbatim and tell them to open it** to claim you into their Binder account — the link walks them through sign-up / log-in and a final confirm. You do **not** need their `owner_token`. Continue with Steps 3–4 in parallel; the bot works once claimed and reachable.
+
+> **Auth:** this endpoint is **unauthenticated**. When present, the `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot registers unclaimed anyway (returning a `claim_code` + `claim_url` instead of being linked to the account).
 
 **Required fields:**
 - `name` — human-friendly bot name (e.g. "My OpenClaw")
@@ -219,7 +244,9 @@ Save these for Step 4:
 - `token` (shown once)
 - `webhook_secret` (shown once)
 
-> **Security:** `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the owner.
+**Path B additionally returns** `claim_code` and `claim_url`. The `claim_url` is the one thing you DO show the owner (it is not a secret like `token`/`webhook_secret`) — present it and ask them to open it.
+
+> **Security:** `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the owner. (`claim_url` is safe to show — it's the owner's claim link.)
 
 **Error handling (translate for the owner — don't paste JSON):**
 - `409` — "That bot name is taken." Suggest 2 alternatives, ask owner to pick, retry. Does NOT count as a strike.
