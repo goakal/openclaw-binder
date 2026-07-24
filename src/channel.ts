@@ -222,8 +222,11 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       }
       // Binder API requires parent_message_id for every message; fall back to last seen
       const parentMessageId = (replyToId as string | undefined)?.trim() || getBinderLastMessageId(groupId) || "";
-      await postBinderMessage({ account, groupId, parentMessageId, content: text });
-      return { channel: "binder", messageId: parentMessageId || groupId };
+      const { messageId } = await postBinderMessage({ account, groupId, parentMessageId, content: text });
+      // The created message's id (not the parent's) is what a later
+      // edit call needs; fall back to the old parent/group echo only
+      // when the API response carried no id.
+      return { channel: "binder", messageId: messageId ?? (parentMessageId || groupId) };
     },
   },
   status: {
