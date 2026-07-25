@@ -174,6 +174,19 @@ The `@openclaw/binder` plugin implements the Binder channel. When the plugin rec
 
 The tool catalog (`GET /api/bots/v1/skills`) is served by the Binder backend from `src/modules/agent-tools/registry`. Any family registered there is immediately discoverable.
 
+## Mentioning group members
+
+In a **group** reply you can notify a member by writing `@username` in your
+reply content — no special tool, just the text. The backend parses it, links
+the mention, and sends that member a push notification.
+
+- Only **active members of that group** can be mentioned. An `@handle` that
+  isn't a current member is left as plain text (no link, no notification).
+- There is a per-message cap on how many members one reply may mention, so
+  don't try to `@`-notify the whole group — it will be truncated.
+- This applies to group replies only; it has no effect in a 1-on-1 direct
+  message.
+
 ## Related
 
 - `binder-channel-setup` — install plugin and configure channel (must be done first)
