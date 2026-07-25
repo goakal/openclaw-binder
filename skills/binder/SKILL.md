@@ -17,6 +17,8 @@ Binder exposes tool capabilities via a **live catalog** at the backend. This ski
 
 **Key principle:** Any tool family deployed on the Binder backend is available here. The catalog is fetched live — no plugin release, no skill update, no per-family content to install.
 
+**Second key principle:** the catalog is written for a *generic* agent talking raw HTTP to Binder. You are not one — you are running behind this channel plugin, which already implements some of those capabilities natively. **When a capability is handled natively, use the native path.** See [Native path vs catalog tools](#native-path-vs-catalog-tools) before reaching for a `binderr_*` tool.
+
 ## When to use
 
 - User asks to use any Binder capability (notes, groups, memory, course, etc.)
@@ -28,6 +30,34 @@ Binder exposes tool capabilities via a **live catalog** at the backend. This ski
 
 - Binder channel plugin installed and configured (`binder-channel-setup` skill)
 - Bot is active (channel status shows ✅)
+
+## Native path vs catalog tools
+
+The live catalog stays the source of truth for **what the backend can do**. It is
+not the source of truth for **how you should do it from here**.
+
+The catalog documents raw HTTP endpoints for an agent with no Binder integration.
+This plugin already wires several of those capabilities into OpenClaw's normal
+message pipeline, with the credentials, target ids, retries and server-side caps
+handled for you. Hand-rolling the HTTP call instead duplicates that work and
+usually fails on ids you don't have in scope.
+
+**Rule: if the plugin handles it natively, prefer native. Reach for a `binderr_*`
+tool when there is no native equivalent — or when you are calling Binder from
+outside this plugin.**
+
+| Capability | Native here? | What to do |
+|---|---|---|
+| Reply with text | ✅ | Just reply. The plugin posts it. |
+| Send an image / video | ✅ | Attach the media to your reply as usual. The plugin uploads it and links it to the message. Do **not** call the `attachments` family or the presigned-upload endpoints. |
+| Read an image the user sent | ✅ | It is already in your context — viewable media is handed to you directly, other files appear as `[attachment: name url]`. No fetch tool, no download step. |
+| Notify a group member | ✅ | Write `@username` in the reply text (see below). |
+| Notes, groups, memory, and every other family | ❌ | Use the catalog tools. |
+| Edit a message you already sent | ❌ (not wired yet) | Use the `messages` family from the catalog. |
+
+The table is a snapshot; the principle is what matters. When a family shows up in
+the catalog that overlaps something you can already do as part of sending or
+receiving a message, the native path wins.
 
 ## Capability discovery workflow
 
@@ -161,7 +191,7 @@ Summarize each family's name, description, and tool count.
 | groups | Group management | `binderr_groups_*` |
 | memory | Agent memory | `binderr_memory_*` |
 
-> **Note:** This table is informational. Always fetch the live catalog — the backend is the source of truth. Unlisted families (e.g. `course`, `reactions`) work identically once deployed; no skill update required.
+> **Note:** This table is informational. Always fetch the live catalog — the backend is the source of truth for what exists. Unlisted families (e.g. `course`, `reactions`) work identically once deployed; no skill update required. A family being in the catalog does not mean calling it by hand is the right move here — check [Native path vs catalog tools](#native-path-vs-catalog-tools) first.
 
 ## How it works
 
@@ -173,6 +203,26 @@ The `@openclaw/binder` plugin implements the Binder channel. When the plugin rec
 4. Sends the reply back via `POST /api/bots/v1/incoming`
 
 The tool catalog (`GET /api/bots/v1/skills`) is served by the Binder backend from `src/modules/agent-tools/registry`. Any family registered there is immediately discoverable.
+
+## Images and attachments
+
+Both directions are handled by the plugin — see
+[Native path vs catalog tools](#native-path-vs-catalog-tools).
+
+**Receiving.** When a user sends an image, it reaches you as media you can
+actually look at. Non-viewable files arrive as a
+`[attachment: name (type) url]` line instead. The `url` is public — fetch it
+with a plain GET if you need the bytes; never send the bot token to it.
+
+A message can be **attachment-only**: empty text with an image is a real turn,
+not an empty one. Answer it.
+
+**Sending.** Attach the media to your reply the normal way. The plugin uploads
+it as the bot and links it to the message you send. Limits enforced by Binder:
+
+- Types: `image/jpeg`, `image/png`, `video/mp4`, `video/quicktime`, `video/webm`
+- Max 100 MB per file, max 10 attachments per message
+- A caption is optional — media with no text is allowed
 
 ## Mentioning group members
 

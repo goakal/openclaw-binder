@@ -50,8 +50,11 @@ A thin [OpenClaw](https://openclaw.ai) channel plugin that bridges Binder group 
 - **Webhook ingress** — receives signed webhook events (HMAC-SHA256) from Binder when someone @mentions the bot
 - **Reply pipeline** — hands messages to OpenClaw's LLM reply pipeline and sends responses back via `POST /api/bots/v1/incoming`
 - **Multi-account** — one gateway can serve multiple Binder bots (different groups, different usernames)
+- **Images both ways** — user images arrive as agent media context; the agent's media replies are uploaded and attached automatically
 
 **Key design:** The plugin is intentionally thin. Capabilities are discovered live from the Binder backend catalog (`GET /api/bots/v1/skills`) — no plugin release needed when Binder adds new tool families. Two bundled skills handle setup and discovery.
+
+The catalog says what the backend *can* do; it does not say how the agent *should* do it from here. Where the plugin implements a capability natively (sending media, reading inbound media, `@`-mentions), the agent uses the native path instead of the raw endpoint — see the "Native path vs catalog tools" section in `skills/binder/SKILL.md`.
 
 ## Bundled skills
 
