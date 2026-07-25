@@ -11,7 +11,7 @@ import {
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { ResolvedBinderAccount } from "./accounts.js";
-import { postBinderMessage } from "./api.js";
+import { postBinderMessage, uploadBinderMedia } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 import { setBinderLastMessageId } from "./channel.js";
 
@@ -38,11 +38,29 @@ export type BinderMonitorOptions = {
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 };
 
+/** Binder's server-side limit on `attachment_ids` per message. */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+/**
+ * An attachment on an inbound Binder message. `url` is a public asset URL,
+ * so it can be handed to the agent runtime as media without extra auth.
+ */
+type BinderAttachment = {
+  id: string;
+  url: string;
+  name: string;
+  /** MIME type, e.g. "image/png". */
+  type: string;
+  size: number;
+};
+
 type BinderHistoryEntry = {
   message_id: string;
   content: string | null;
   sender: { id: string; name: string; username: string | null };
   timestamp: string;
+  /** Attachments on that prior message. Omitted by older backends. */
+  attachments?: BinderAttachment[];
 };
 
 type BinderInboundData = {
@@ -63,6 +81,12 @@ type BinderInboundData = {
    * must treat it as optional.
    */
   history?: BinderHistoryEntry[];
+  /**
+   * Attachments on the triggering message. Omitted by older backends. A
+   * message can be attachment-only, so an empty `content` does not mean
+   * there is nothing to answer.
+   */
+  attachments?: BinderAttachment[];
 };
 
 type BinderWebhookPayload = {
@@ -80,13 +104,36 @@ function verifyBinderSignature(body: string, signature: string, secret: string):
   return timingSafeEqual(a, b);
 }
 
+/**
+ * Media the agent runtime can look at directly (images, audio, video) versus
+ * everything else (documents), which is only mentioned as a link in the text.
+ */
+function isViewableMedia(attachment: BinderAttachment): boolean {
+  return /^(image|audio|video)\//i.test(attachment.type ?? "");
+}
+
+/** `photo.png (image/png)` — used in history lines and body placeholders. */
+function describeAttachment(attachment: BinderAttachment): string {
+  return `${attachment.name || attachment.id} (${attachment.type || "unknown"})`;
+}
+
 function formatHistoryContext(history: BinderHistoryEntry[] | undefined): string {
   if (!history || history.length === 0) {
     return "";
   }
   const lines = history
-    .filter((m) => (m.content ?? "").trim().length > 0)
-    .map((m) => `${m.sender.name || m.sender.username || m.sender.id}: ${m.content}`);
+    .map((m) => {
+      const sender = m.sender.name || m.sender.username || m.sender.id;
+      const content = (m.content ?? "").trim();
+      // An attachment-only turn used to be filtered out entirely, which
+      // silently erased "user posted a screenshot" from the context.
+      const attachments = (m.attachments ?? [])
+        .map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`)
+        .join(" ");
+      const line = [content, attachments].filter(Boolean).join(" ");
+      return line ? `${sender}: ${line}` : "";
+    })
+    .filter(Boolean);
   if (lines.length === 0) {
     return "";
   }
@@ -246,14 +293,35 @@ async function processBinderEvent(
   setBinderLastMessageId(peerId, data.message_id);
 
   const rawBody = (data.content ?? "").trim();
-  const cleanBody = isDm ? rawBody : rawBody
+  const strippedBody = isDm ? rawBody : rawBody
     .replace(new RegExp(`@${account.config.botUsername}\\b`, "gi"), "")
     .trim();
 
-  if (!cleanBody) {
+  const attachments = data.attachments ?? [];
+  const viewableMedia = attachments.filter(isViewableMedia);
+  const otherAttachments = attachments.filter((a) => !isViewableMedia(a));
+  binderLog(
+    verbose,
+    "processBinderEvent: attachments=", attachments.length,
+    "viewable=", viewableMedia.length,
+  );
+
+  if (!strippedBody && attachments.length === 0) {
     binderLog(verbose, "processBinderEvent: empty body, dropping");
     return;
   }
+
+  // An attachment-only message (image with no caption) is a real turn: give
+  // the agent a body describing what arrived instead of dropping the event.
+  // Non-viewable attachments (documents) are always listed as links since the
+  // runtime cannot render them.
+  const attachmentNote = otherAttachments.length > 0
+    ? otherAttachments.map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`).join(" ")
+    : "";
+  const mediaNote = !strippedBody && viewableMedia.length > 0
+    ? `[${viewableMedia.length === 1 ? "attachment" : `${viewableMedia.length} attachments`}: ${viewableMedia.map(describeAttachment).join(", ")}]`
+    : "";
+  const cleanBody = [strippedBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
 
   // The webhook only carries the single triggering message; `history` (when
   // the Binder backend sends it) adds the recent thread turns from other
@@ -295,7 +363,19 @@ async function processBinderEvent(
     Body: body,
     BodyForAgent: bodyWithContext,
     RawBody: rawBody,
-    CommandBody: cleanBody,
+    // Command parsing must see only what the user typed — not the synthesized
+    // attachment notes.
+    CommandBody: strippedBody,
+    // Inbound media the runtime can look at. Paths are left unset so core
+    // stages (downloads) the URLs itself, the same as other URL-based channels.
+    ...(viewableMedia.length > 0
+      ? {
+        MediaUrl: viewableMedia[0].url,
+        MediaType: viewableMedia[0].type,
+        MediaUrls: viewableMedia.map((a) => a.url),
+        MediaTypes: viewableMedia.map((a) => a.type),
+      }
+      : {}),
     From: `binder:${data.sender.id}`,
     To: peerId,
     SessionKey: route.sessionKey,
@@ -343,13 +423,60 @@ async function processBinderEvent(
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
-        binderLog(verbose, `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}`);
+        // Collect any media the agent attached to this reply (URLs or local
+        // paths). Upload each to Binder as the bot, then send the message
+        // with the resulting attachment ids. A failed upload is logged and
+        // skipped so a broken image never drops the text reply.
+        const allMediaSources = [...new Set([
+          ...(payload.mediaUrl ? [payload.mediaUrl] : []),
+          ...(payload.mediaUrls ?? []),
+        ])];
+        // Binder rejects the whole message above this count, which would
+        // drop the reply — cap and keep the first ten instead.
+        const mediaSources = allMediaSources.slice(0, MAX_ATTACHMENTS_PER_MESSAGE);
+        if (allMediaSources.length > mediaSources.length) {
+          binderError(
+            verbose,
+            `deliver: ${allMediaSources.length} media items, sending first ${MAX_ATTACHMENTS_PER_MESSAGE}`,
+          );
+        }
+        let attachmentIds: string[] | undefined;
+        if (mediaSources.length > 0) {
+          const ids: string[] = [];
+          for (const source of mediaSources) {
+            try {
+              const id = await uploadBinderMedia({
+                account,
+                ...(isDm ? { conversationId: apiPeerId } : { groupId: apiPeerId }),
+                source,
+              });
+              ids.push(id);
+            } catch (err) {
+              binderError(verbose, `deliver: media upload failed for ${source}: ${String(err)}`);
+            }
+          }
+          if (ids.length > 0) attachmentIds = ids;
+        }
+
+        // Binder rejects a message with neither content nor attachments. If
+        // this was a media-only reply and every upload failed, send a
+        // placeholder instead of a 400 that would drop the turn entirely.
+        let content = payload.text ?? "";
+        if (!content.trim() && !attachmentIds && mediaSources.length > 0) {
+          content = "[media upload failed]";
+        }
+
+        binderLog(
+          verbose,
+          `deliver: reply to ${isDm ? "DM" : "group"} ${apiPeerId}, replyTo=${replyTo}, attachments=${attachmentIds?.length ?? 0}`,
+        );
         await postBinderMessage({
           account,
           groupId: apiPeerId,
           parentMessageId: replyTo,
-          content: payload.text ?? "",
+          content,
           isDm,
+          attachmentIds,
         });
         target.statusSink?.({ lastOutboundAt: Date.now() });
       },

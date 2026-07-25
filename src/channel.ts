@@ -12,7 +12,7 @@ import {
   resolveDefaultBinderAccountId,
   type ResolvedBinderAccount,
 } from "./accounts.js";
-import { postBinderMessage, probeBinderToken } from "./api.js";
+import { postBinderMessage, probeBinderToken, uploadBinderMedia } from "./api.js";
 import {
   monitorBinderProvider,
   resolveBinderWebhookPath,
@@ -43,7 +43,7 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
   capabilities: {
     chatTypes: ["group", "direct"],
     reactions: false,
-    media: false,
+    media: true,
     threads: false,
     nativeCommands: false,
     blockStreaming: false,
@@ -223,6 +223,36 @@ export const binderPlugin: ChannelPlugin<ResolvedBinderAccount> = {
       // Binder API requires parent_message_id for every message; fall back to last seen
       const parentMessageId = (replyToId as string | undefined)?.trim() || getBinderLastMessageId(groupId) || "";
       const { messageId } = await postBinderMessage({ account, groupId, parentMessageId, content: text });
+      // The created message's id (not the parent's) is what a later
+      // edit call needs; fall back to the old parent/group echo only
+      // when the API response carried no id.
+      return { channel: "binder", messageId: messageId ?? (parentMessageId || groupId) };
+    },
+    sendMedia: async ({ cfg, to, text, mediaUrl, mediaReadFile, accountId, replyToId }) => {
+      const account = resolveBinderAccount({ cfg, accountId });
+      const rawTo = to?.trim() ?? "";
+      const groupId = rawTo.replace(/^binder:/i, "");
+      if (!groupId) {
+        throw new Error("Binder sendMedia: missing target group_id (to)");
+      }
+      if (!mediaUrl) {
+        throw new Error("Binder sendMedia: missing mediaUrl");
+      }
+      // Binder API requires parent_message_id for every message; fall back to last seen
+      const parentMessageId = (replyToId as string | undefined)?.trim() || getBinderLastMessageId(groupId) || "";
+      const attachmentId = await uploadBinderMedia({
+        account,
+        groupId,
+        source: mediaUrl,
+        readFile: mediaReadFile,
+      });
+      const { messageId } = await postBinderMessage({
+        account,
+        groupId,
+        parentMessageId,
+        content: text ?? "",
+        attachmentIds: [attachmentId],
+      });
       // The created message's id (not the parent's) is what a later
       // edit call needs; fall back to the old parent/group echo only
       // when the API response carried no id.
