@@ -15,6 +15,20 @@ metadata:
 
 Connect this OpenClaw gateway to Binder — a group-chat app — so people in the owner's groups can talk to this agent by @mentioning it.
 
+## What this skill covers, and what it doesn't
+
+Registering a bot, getting a public URL, the webhook contract and the connection check are the same on every agent framework, and Binder documents them itself. This skill does **not** repeat them — a copy here would drift out of date the moment the platform changed, and it did: the webhook headers were renamed once and every copy had to be found by hand.
+
+So **fetch the setup guide before Step 2 and keep it open**:
+
+```bash
+curl -s "${API_URL}/docs/agents/setup-guide.md"
+```
+
+This skill covers what the guide cannot know: how the plugin is installed on this gateway, where the credentials go in gateway config, how the gateway serves the webhook route, and how to restart it. Where a step is in the guide, this file says so and tells you what is different here.
+
+The owner-communication rules below are **not** in that category. They are how you behave for the whole setup, they come from the owner, and they stay here.
+
 ## READ THIS FIRST: how to communicate with your owner
 
 Your owner is a person setting up an app, not an engineer reading logs. The setup only feels seamless if you narrate it well. These rules override your default reporting style:
@@ -27,7 +41,7 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
 7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
 8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials". **`claim_url` and `claim_code` are NOT secrets** — they are the owner's own claim link, useless to anyone else, and the only way they can finish setup. Print the `claim_url` in full, exactly as returned, on its own line. Never redact, mask, shorten, or replace part of the code with `***` or `…`. A masked link is a broken link: if what you printed is not complete and clickable, print it again.
-9. **Retry in a dirty session: verify, don't remember.** If this setup was attempted before — in this conversation or an earlier one — do NOT trust conversation memory about what is done, what failed, or what the owner chose. Files, config, and this skill may all have changed since. Re-read this skill from disk, then verify actual state with commands:
+9. **Retry in a dirty session: verify, don't remember.** If this setup was attempted before — in this conversation or an earlier one — do NOT trust conversation memory about what is done, what failed, or what the owner chose. Files, config, and this skill may all have changed since. Re-read this skill from disk, re-fetch the setup guide, then verify actual state with commands:
    ```bash
    openclaw plugins list | grep binder
    openclaw config get channels.binder.accounts
@@ -135,7 +149,7 @@ and I'll set up the stable link.
 
 - OpenClaw gateway running (`openclaw gateway status`)
 - Binder backend `api_url`
-- Optionally a valid `owner_token` (from Binder account settings). **Not required** — without one, registration returns a `claim_url` you give the user to claim the bot (Step 2, Path B).
+- Optionally a valid `owner_token` (from Binder account settings). **Not required** — without one, registration returns a `claim_url` you give the user to claim the bot.
 
 If either is missing, send a Blocked message telling the owner where to get it (owner token: Binder app → Account Settings → AI Agents).
 
@@ -150,6 +164,12 @@ Internal procedure for the 5 owner-visible steps. Report progress with the templ
 Resolve the Binder API URL, in order:
 1. User-provided `api_url` / `Binder API URL` from the prompt
 2. Default: `https://api.heybinder.com`
+
+Then fetch the setup guide — Steps 2, 3 and 4c follow it:
+
+```bash
+curl -s "${API_URL}/docs/agents/setup-guide.md"
+```
 
 Choose a bot name + username yourself (must end in `.ai`; derive it from the gateway or the owner's handle). Send the **Kickoff** template and continue immediately — do not wait for a reply. If the owner names a different bot later, PATCH it.
 
@@ -187,86 +207,20 @@ openclaw plugins install --link ./openclaw-binder
 
 ## Step 2: Register the bot
 
-There are two registration paths. **Pick based on whether the user gave you an `owner_token`:**
+**Follow the setup guide's "How to register" section.** It covers both paths (with and without an `owner_token`), the response shape, the `claim_url` rules, and how to translate each error for the owner.
 
-- **Have an owner token** (user copied a prompt from Binder account settings) → **Path A** (owned registration). Bot is linked to their account immediately.
-- **No owner token** (user started from the Binder homepage; may not even have a Binder account yet) → **Path B** (claim-link registration). Register unclaimed, then hand the user a `claim_url` to finish setup.
+Two things are specific to this gateway:
 
-#### Path A — with an owner token
-
-```bash
-curl -s -X POST "${API_URL}/api/bots/v1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "<confirmed-name>",
-    "username": "<confirmed-username>.ai",
-    "callback_url": "<gateway-public-url>/binder",
-    "owner_token": "'"${OWNER_TOKEN}"'"
-  }'
-```
-
-#### Path B — no owner token (claim link)
-
-Omit `owner_token` entirely. Do **not** send an empty string or a Bearer header.
-
-```bash
-curl -s -X POST "${API_URL}/api/bots/v1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "<agent-given-name>",
-    "username": "<agent-given-username>.ai",
-    "callback_url": "<gateway-public-url>/binder"
-  }'
-```
-
-The response includes `claim_code` **and** `claim_url` (in addition to `token` + `webhook_secret`). **Show the owner the `claim_url` verbatim and tell them to open it** to claim you into their Binder account — the link walks them through sign-up / log-in and a final confirm. You do **not** need their `owner_token`. Continue with Steps 3–4 in parallel; the bot works once claimed and reachable.
-
-> **Auth:** this endpoint is **unauthenticated**. When present, the `owner_token` goes in the **request body**, not an `Authorization` header — a Bearer header is ignored, and the bot registers unclaimed anyway (returning a `claim_code` + `claim_url` instead of being linked to the account).
-
-**Required fields:**
-- `name` — human-friendly bot name (e.g. "My OpenClaw")
-- `username` — unique handle, must end in `.ai`. The `.ai` suffix is mandatory — Binder reserves it for AI agents.
-- `callback_url` — where Binder sends webhook events. Must be **public HTTPS**. If you don't have a public URL yet, register with your best guess and update it in Step 3 via PATCH.
-
-**Success response (201):**
-```json
-{
-  "bot": {
-    "id": "uuid-here",
-    "name": "My OpenClaw",
-    "username": "my-openclaw.ai",
-    "owner_id": "..."
-  },
-  "token": "binder_bot_abc123...",
-  "webhook_secret": "whsec_xyz789..."
-}
-```
-
-Save these for Step 4:
-- `bot.id` → `botId`
-- `bot.username` → `botUsername`
-- `token` (shown once)
-- `webhook_secret` (shown once)
-
-**Path B additionally returns** `claim_code` and `claim_url`. The `claim_url` is the one thing you DO show the owner (it is not a secret like `token`/`webhook_secret`) — present it and ask them to open it. Print it **complete and unmasked**, on its own line, exactly as the API returned it:
-
-```
-Open this link to claim your bot:
-https://web.heybinder.com/claim?code=1a2b3c4d5e6f7a8b
-```
-
-Not `…/claim?code=***`, not `…/claim?code=1a2b…`, not a shortened or "safe" version. The owner cannot finish setup without every character of that code.
-
-> **Security:** `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the owner. (`claim_url` is safe to show — it's the owner's claim link.)
-
-**Error handling (translate for the owner — don't paste JSON):**
-- `409` — the **username** is taken (the display name doesn't have to be unique). Add a short suffix yourself and retry immediately, up to twice — do not interrupt the owner. Only if both retries collide, offer 2 alternatives. Does NOT count as a strike.
-- `400` with an owner-token error — Blocked message: "Your Binder token isn't valid — it may have been regenerated. Please copy a fresh one from Binder → Account Settings → AI Agents and paste it here." (This route is unauthenticated, so a bad owner token is a `400`, not a `401`.)
-- `400` for anything else — fix the request yourself (field format issue); counts as a strike.
+- **`callback_url`** is your public gateway URL plus the webhook path, e.g. `https://<gateway-public-url>/binder`. You may not have the public URL yet — register with your best guess and PATCH it in Step 3, as the guide describes.
+- **Keep these four values for Step 4a**, from the registration response: `bot.id` → `botId`, `bot.username` → `botUsername`, `token`, `webhook_secret`. The last two are shown exactly once; write them into config before doing anything else.
 
 ## Step 3: Make the gateway reachable (the step that usually blocks)
 
-Check whether the gateway already has a public HTTPS URL:
+**Follow the setup guide's "Make yourself reachable" section** — tunnel choice, the one temporary-vs-permanent question to ask the owner, the Cloudflare and Tailscale walkthroughs, when to stop, and the PATCH that updates `callback_url`.
+
+Gateway-specific parts:
+
+Check whether this gateway already has a public HTTPS URL before doing anything else:
 
 ```bash
 openclaw config get gateway.remote.url
@@ -274,161 +228,11 @@ openclaw config get gateway.bind
 openclaw config get gateway.port
 ```
 
-**Decision tree — follow it, do not loop:**
+If `gateway.remote.url` is set and public HTTPS, use it — no tunnel needed.
 
-1. `gateway.remote.url` set and public HTTPS → use it. Done.
-2. Bind is `127.0.0.1` / private IP (the default) → Binder **cannot** reach this gateway. A tunnel is required. Check what's available:
-   ```bash
-   command -v cloudflared; command -v tailscale
-   ```
-3. **A tunnel tool exists** → ask the owner ONE question before running it — temporary or permanent (template below). This is a real owner decision because it affects whether the bot survives a restart; it is NOT a safety question. Pick the tool yourself from what's installed — do not ask which tool, and do not ask permission to tunnel. A tunnel is safe: it creates an outbound connection to the tunnel provider, opens no inbound port, changes no firewall rule, and the gateway stays on loopback.
+The local port the tunnel points at is the gateway's port, **18789** by default (`gateway.port` if changed). The webhook path is `/binder` unless you set a different `webhookPath` in Step 4a — the two must match.
 
-   ```
-   My gateway needs a public link so Binder can reach it. Two ways:
-
-   1. Quick temporary link (recommended to start) — works in seconds,
-      no login needed. Downside: the link dies if this machine or the
-      tunnel restarts, and the bot goes offline until I set it up again.
-   2. Permanent link — survives restarts, the proper long-term setup.
-      Needs a bit from you: <a Cloudflare login + a domain you own |
-      a Tailscale login> — I'll walk you through it click by click,
-      one step at a time.
-
-   You can start with 1 now and I'll upgrade to 2 later.
-   I need you to: pick 1 or 2.
-   ```
-
-   Then run the chosen mode (commands below). If the tunnel comes up, you have your public URL. Done.
-4. **No tunnel tool installed, or tunnel fails twice** → STOP. This is not solvable alone: installing software and logging into tunnel accounts are owner decisions. Send a Blocked message like:
-
-```
-⚠️ I'm stuck on step 3: my gateway runs on this machine only, and Binder
-(on the internet) has no way to reach it. I need a tunnel, and there's
-no tunnel tool installed that I can use.
-
-Your options:
-1. Cloudflare Tunnel (recommended — free, quickest): install with
-   <one-line install command for this OS>, then I'll handle the rest.
-2. Tailscale Funnel (best if you already use Tailscale): install
-   Tailscale and log in, then I'll expose only the webhook path.
-3. You already have a domain + reverse proxy? Tell me the domain and
-   I'll give you the exact proxy rule.
-
-I need you to: pick an option (1, 2, or 3).
-```
-
-Never retry the same failing tunnel command more than twice. Never silently wait.
-
-### Tunnel commands
-
-**Cloudflare Tunnel — quick mode** (owner chose 1, temporary — ephemeral URL):
-
-```bash
-cloudflared tunnel --url http://localhost:18789
-```
-
-After it's up, remind the owner: "Heads-up: this is the temporary link — it dies if this machine or the tunnel restarts, and the bot goes offline until I recreate it. Say 'make it permanent' anytime and I'll upgrade it."
-
-**Cloudflare Tunnel — persistent mode** (owner chose 2, permanent — stable URL, production):
-
-Permanent setup mixes your work with the owner's. Rule for every owner touchpoint: pause, send ONE "I need you to" message with the exact link or command, say what they will see and what "done" looks like, then wait for their confirmation. One action per message — never a list of three things to go do.
-
-*2a. Check prerequisites (ask, owner-only knowledge):*
-
-```
-For the permanent link I need a Cloudflare account with a domain added
-to it (any domain you own works, even one you don't otherwise use).
-I need you to: tell me the domain — or say "no domain" and I'll use
-the Tailscale route instead (no domain needed).
-```
-
-If no domain and no Tailscale → fall back to the temporary tunnel and say why.
-
-*2b. Authorize (owner does the browser part):* run `cloudflared tunnel login`, capture the URL it prints, then:
-
-```
-I need you to: open this link, log in to Cloudflare, click your domain
-<domain>, then press "Authorize". Tell me "done" when the page says
-you can close it.
-→ <the URL cloudflared printed>
-```
-
-Wait for the owner. Verify `~/.cloudflared/cert.pem` now exists; if not, resend the link (counts toward two strikes).
-
-*2c. You do the rest (no asking):*
-
-```bash
-cloudflared tunnel create binder-webhook
-# write ~/.cloudflared/config.yml:
-# tunnel: binder-webhook
-# credentials-file: /home/<user>/.cloudflared/<tunnel-id>.json
-# ingress:
-#   - hostname: binder-webhook.<domain>
-#     service: http://localhost:18789
-#   - service: http_status:404
-cloudflared tunnel route dns binder-webhook binder-webhook.<domain>
-```
-
-*2d. Install as a service (may need the owner for sudo):* try `cloudflared service install && sudo systemctl start cloudflared`. If sudo needs a password you can't provide:
-
-```
-I need you to: run this one command in a terminal on this machine —
-it installs the tunnel as a background service so it survives reboots:
-  sudo cloudflared service install && sudo systemctl start cloudflared
-Tell me "done" when it finishes.
-```
-
-*2e. Verify before moving on:* `curl -sI https://binder-webhook.<domain>` returns a response (any HTTP status — you're checking DNS + tunnel, the webhook path comes later). DNS can take a minute; retry twice with a short wait before calling it a failure.
-
-Public URL: `https://binder-webhook.<domain>/binder`.
-
-**Tailscale Funnel** (owner chose 2, permanent — survives restarts, no domain needed):
-
-*T1. Check login:* `tailscale status`. If logged out, run `tailscale up`, capture the login URL it prints, and send:
-
-```
-I need you to: open this link and log in to Tailscale (create a free
-account if you don't have one). Tell me "done" when it says success.
-→ <the URL tailscale printed>
-```
-
-*T2. Start the funnel:*
-
-```bash
-tailscale funnel --bg --set-path /binder http://127.0.0.1:18789/binder
-```
-
-If the command prints an approval URL instead of starting (Funnel or HTTPS not yet enabled on the tailnet), send it to the owner the same way: "open this link and press Enable, tell me 'done'." Then re-run the command.
-
-*T3. Verify:* `tailscale funnel status` shows the path, and `curl -sI https://<node-name>.<tailnet>.ts.net/binder` responds.
-
-Public URL: `https://<node-name>.<tailnet>.ts.net/binder`.
-
-**Reverse proxy** (owner has a domain):
-
-```caddy
-your-domain.com {
-    reverse_proxy /binder* localhost:18789
-}
-```
-
-Public URL: `https://your-domain.com/binder`.
-
-> **Keep loopback:** Leave the gateway bound to `127.0.0.1`. The tunnel or proxy handles external access. Do not change to `0.0.0.0`.
-
-### Update the bot's callback URL
-
-If the public URL was obtained (or changed) after registration:
-
-```bash
-curl -s -X PATCH "${API_URL}/api/bots/v1/${BOT_ID}" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${BOT_TOKEN}" \
-  -H "X-Bot-ID: ${BOT_ID}" \
-  -d "{\"callback_url\": \"${PUBLIC_URL}/binder\"}"
-```
-
-> Use **bot auth** here (`Authorization: Bearer <token>` + `X-Bot-ID: <bot.id>`, both from the Step 2 registration response) — this route is wrapped in `BotAuthMiddleware`, not owner-token auth. `${BOT_TOKEN}` is the `token` returned at registration.
+> **Keep loopback:** leave `gateway.bind` as `127.0.0.1`. The tunnel handles external access. Do not change it to `0.0.0.0`.
 
 ## Step 4: Connect and verify
 
@@ -446,7 +250,7 @@ openclaw config set channels.binder.accounts.default.enabled true
 
 The `default` account works for single-bot setups. For multi-account, use a different `<id>` (e.g. `work`, `personal`).
 
-> **Why configure before verify:** The plugin needs `webhookSecret` to verify inbound webhook HMAC signatures. Without it, the ping check fails with `404` or `invalid signature`.
+> **Why configure before verify:** The plugin needs `webhookSecret` to verify inbound webhook HMAC signatures and to sign its reply to the connection check. Without it, the check fails at `webhook_delivered` or `response_signature`.
 
 ### 4b. Restart gateway
 
@@ -454,9 +258,9 @@ The `default` account works for single-bot setups. For multi-account, use a diff
 openclaw gateway restart
 ```
 
-### 4c. Verify end-to-end delivery
+Config changes do nothing until the gateway restarts. Restart before running the check, not after it fails.
 
-Sends a signed `ping` through Binder to the callback URL and waits for the plugin to echo a nonce:
+### 4c. Verify end-to-end delivery
 
 ```bash
 curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
@@ -466,45 +270,23 @@ curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
   -d "{\"url\": \"${PUBLIC_URL}/binder\"}"
 ```
 
-> Bot auth again (`BOT_TOKEN` + `X-Bot-ID`), same as the PATCH above.
-> Omit the body (`-d '{}'`) to test the callback URL already registered on the bot.
+**The setup guide explains the response** — it is an ordered checklist, and `failed_step` names the one that broke. Read the `hint` on the failed step; it says what to do. Never report a raw code like `signature_mismatch` to the owner — translate it into one plain sentence.
 
-The response is a **checklist** — read it instead of guessing. `ok: true` means every step passed:
+What a failure usually means **on this gateway**:
 
-```json
-{
-  "ok": false,
-  "reachable": true,
-  "latency_ms": 45,
-  "failed_step": "webhook_delivered",
-  "checks": [
-    { "step": "url_valid",          "status": "pass", "detail": "https://x.trycloudflare.com/binder" },
-    { "step": "dns_resolves",       "status": "pass" },
-    { "step": "connected",          "status": "pass", "detail": "TLS handshake ok, replied in 45ms" },
-    { "step": "webhook_delivered",  "status": "fail", "detail": "your endpoint answered HTTP 404", "hint": "…" },
-    { "step": "response_signature", "status": "skip" },
-    { "step": "nonce_echo",         "status": "skip" }
-  ],
-  "response_body_preview": "…"
-}
-```
-
-Statuses: `pass`, `warn` (works but off-spec — does not block setup), `fail`, `skip` (never reached). Fix what `failed_step` names, then re-run:
-
-| `failed_step` | What it means here | Fix |
+| `failed_step` | Cause here | Fix |
 |---|---|---|
-| `url_valid` / `dns_resolves` | The URL isn't public HTTPS, or the tunnel hostname is gone | Back to Step 3 — the tunnel died or the URL is stale |
-| `connected` (timeout) | Gateway accepted but never answered | `openclaw gateway restart`, check `openclaw logs binder` |
-| `connected` (refused) | Nothing listening at that address | Tunnel not running, or `callback_url` ≠ current tunnel URL |
-| `webhook_delivered` HTTP 404 | Webhook path mismatch | `callback_url` path must equal `channels.binder.accounts.<id>.webhookPath` (e.g. `/binder`) |
-| `webhook_delivered` HTTP 401 | Plugin rejected Binder's signature | `webhookSecret` in config ≠ the one from registration |
-| `response_signature` (`signature_mismatch`) | Reply signed with a different secret | Same cause as 401 — re-copy `webhookSecret`, restart gateway |
-| `response_signature` (`response_not_signed`) | Handler does not sign its reply | On this plugin, update to ≥ 2026.7.27.0 and restart the gateway — unsigned replies fail the check |
-| `nonce_echo` | Something other than this plugin answered | Another service owns that path/port |
+| `url_valid` / `dns_resolves` | Tunnel died, or `callback_url` is a stale tunnel URL | Back to Step 3, then PATCH the new URL |
+| `connected` (timeout) | Gateway accepted but never answered | `openclaw gateway restart`, then `openclaw logs binder` |
+| `connected` (refused) | Nothing listening there | Tunnel not running, or pointing at the wrong port |
+| `webhook_delivered` 404 | Path mismatch | `callback_url` path must equal `channels.binder.accounts.<id>.webhookPath` |
+| `webhook_delivered` 401 | Plugin rejected Binder's signature | `webhookSecret` in config ≠ the one from registration |
+| `response_signature` | Reply unsigned, or signed with a different secret | Update the plugin to ≥ 2026.7.27.0 (older versions did not sign replies), then restart. If already current, re-copy `webhookSecret` |
+| `nonce_echo` | Something other than this plugin answered | Another service owns that path or port |
 
-Never report `signature_mismatch` (or any raw code) to the owner — translate the `hint` into one plain sentence. Two failed fix attempts on the same step → Blocked message.
+Two failed fix attempts on the same step → Blocked message.
 
-**Re-runnable any time.** This probe changes nothing, so use it whenever the owner says the bot went quiet, after moving or restarting a tunnel, or before asking them to check anything on their side. "It stopped working" → run this first, then report which step broke.
+**Re-runnable any time.** The check changes nothing, so use it whenever the owner says the bot went quiet, after moving or restarting a tunnel, or before asking them to check anything on their side.
 
 ### 4d. Verify channel health
 
@@ -524,17 +306,14 @@ Everything green → send the **Done** template. Step 5 is the owner's: open Bin
 
 Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, config entry, and webhook path. Use the same owner-communication templates (the plan shrinks to steps 2, 4, 5 — plugin and tunnel already exist).
 
-```bash
-# Register new bot (Step 2 with different username)
-curl -s -X POST "${API_URL}/api/bots/v1" -H "Content-Type: application/json" \
-  -d '{"name": "...", "username": "<unique>.ai", "callback_url": "<gateway-url>/binder-2", "owner_token": "'"${OWNER_TOKEN}"'"}'
+Register the new bot exactly as in Step 2, with a different `username` and a `callback_url` ending in the new path, then:
 
-# Configure under a different account ID
+```bash
+openclaw config set channels.binder.accounts.second.apiUrl "${API_URL}"
 openclaw config set channels.binder.accounts.second.botId "<bot.id>"
 openclaw config set channels.binder.accounts.second.token "<token>"
 openclaw config set channels.binder.accounts.second.webhookSecret "..."
 openclaw config set channels.binder.accounts.second.botUsername "..."
-openclaw config set channels.binder.accounts.second.apiUrl "${API_URL}"
 openclaw config set channels.binder.accounts.second.webhookPath "/binder-2"
 openclaw config set channels.binder.accounts.second.enabled true
 
@@ -544,6 +323,8 @@ openclaw gateway restart
 **Important:** Each account must use a **different webhook path** so the gateway can route inbound webhooks. The `callback_url` must match the webhook path.
 
 ## Troubleshooting
+
+Anything not listed here is probably not specific to this gateway — run the Step 4c check and follow the hint on the failed step.
 
 ### Plugin not found after install
 
@@ -561,23 +342,15 @@ openclaw logs binder
 
 Common causes:
 - `apiUrl` points at wrong backend
-- `token` or `webhook_secret` mistyped (long random strings)
+- `token` or `webhookSecret` mistyped (long random strings)
 - Gateway not restarted after config change
 - Another plugin registered the same webhook path
 
 ### Webhook returns 401 / invalid signature
 
-- `webhook_secret` in config must match what `POST /api/bots/v1` returned
+- `webhookSecret` in config must match what registration returned
 - `callback_url` path and `webhookPath` in config must match
-- `token` must be live (not rotated on backend)
-
-### Binder API unreachable
-
-```bash
-curl -s "${API_URL}/api/bots/v1/ping"
-```
-
-If the ping endpoint doesn't respond, Binder may be down or the URL is wrong. Tell the owner in plain words and suggest checking the URL in their prompt.
+- `token` must be live (not rotated on the backend)
 
 ## Self-patch (plugin SDK drift)
 
