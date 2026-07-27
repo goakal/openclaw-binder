@@ -210,13 +210,8 @@ async function handleBinderWebhookRequest(
       }
       const rawBody = bodyResult.value;
 
-      // Binder sends `X-Binder-*`; `X-Binderr-*` (double "r") is the historical
-      // spelling, still emitted by the backend during the deprecation window
-      // and by any backend older than this plugin. Accept either.
-      const signatureHeader = (req.headers["x-binder-signature"] ??
-        req.headers["x-binderr-signature"]) as string | undefined;
-      const timestampHeader =
-        req.headers["x-binder-timestamp"] ?? req.headers["x-binderr-timestamp"];
+      const signatureHeader = req.headers["x-binder-signature"] as string | undefined;
+      const timestampHeader = req.headers["x-binder-timestamp"];
 
       if (!signatureHeader) {
         res.statusCode = 401;
@@ -256,11 +251,10 @@ async function handleBinderWebhookRequest(
         const pingBody = JSON.stringify({ ok: true, nonce: payload.data?.nonce ?? null });
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json");
-        const pingSig = signBinderBody(pingBody, target.account.config.webhookSecret);
-        // Both spellings: a backend older than the rename only reads the
-        // legacy one, and it grades an unsigned reply as a failure.
-        res.setHeader("X-Binder-Signature", pingSig);
-        res.setHeader("X-Binderr-Signature", pingSig);
+        res.setHeader(
+          "X-Binder-Signature",
+          signBinderBody(pingBody, target.account.config.webhookSecret),
+        );
         res.end(pingBody);
         return true;
       }
