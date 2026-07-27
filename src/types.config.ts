@@ -3,7 +3,7 @@ export type BinderAccountConfig = {
   name?: string;
   /** Base URL of the Binder instance, e.g. "https://binder.example.com" */
   apiUrl: string;
-  /** Bot ID from Binderr database */
+  /** Bot ID from Binder database */
   botId: string;
   /** Bearer token for bot API authentication */
   token: string;
