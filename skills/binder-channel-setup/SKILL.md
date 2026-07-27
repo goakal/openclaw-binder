@@ -26,7 +26,7 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner technical choices you can resolve yourself — e.g. do NOT ask which tunnel *tool* to use; check what's installed (`command -v cloudflared tailscale`) and pick one. Ask only when a step needs something only the owner has (an account login, a software install, a domain), after two failed attempts, or for a genuine product decision that outlives setup — currently exactly one: the temporary-vs-permanent tunnel question in Step 3.
 6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
 7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
-8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials".
+8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials". **`claim_url` and `claim_code` are NOT secrets** — they are the owner's own claim link, useless to anyone else, and the only way they can finish setup. Print the `claim_url` in full, exactly as returned, on its own line. Never redact, mask, shorten, or replace part of the code with `***` or `…`. A masked link is a broken link: if what you printed is not complete and clickable, print it again.
 9. **Retry in a dirty session: verify, don't remember.** If this setup was attempted before — in this conversation or an earlier one — do NOT trust conversation memory about what is done, what failed, or what the owner chose. Files, config, and this skill may all have changed since. Re-read this skill from disk, then verify actual state with commands:
    ```bash
    openclaw plugins list | grep binder
@@ -60,12 +60,15 @@ Here's the plan — 5 steps:
 🔲 4. Connect and verify everything works (me)
 🔲 5. You add the bot to a group and say hi (you)
 
-I'd like to name the bot "<suggested name>" with the handle
-@<suggested-username>.ai — reply "go" to accept, or tell me a
-different name.
+I'm registering it as "<chosen name>" with the handle
+@<chosen-username>.ai — tell me any time if you want a
+different name and I'll change it.
 
-I need you to: confirm the name (or just say "go").
+Next, I will install the plugin on my gateway.
 ```
+
+Announce the name, don't ask for it. Waiting on a name is the most
+common reason setup stalls, and renaming later is cheap.
 
 **Progress** (after each completed step):
 
@@ -126,6 +129,7 @@ and I'll set up the stable link.
 - User provides a Binder `owner_token`
 - User has **no** Binder account/token yet and wants to get started (claim-link flow)
 - A previous Binder setup attempt is visible in this conversation (finish it — see protocol rule 9: verify state, don't trust memory)
+- "My bot stopped replying" / "is Binder still connected?" — run the Step 4c connection check and report which step broke (it is safe to re-run and changes nothing)
 
 ## Prerequisites
 
@@ -147,7 +151,7 @@ Resolve the Binder API URL, in order:
 1. User-provided `api_url` / `Binder API URL` from the prompt
 2. Default: `https://api.heybinder.com`
 
-Suggest a bot name + username (must end in `.ai`). Send the **Kickoff** template and wait for the owner's confirmation before continuing.
+Choose a bot name + username yourself (must end in `.ai`; derive it from the gateway or the owner's handle). Send the **Kickoff** template and continue immediately — do not wait for a reply. If the owner names a different bot later, PATCH it.
 
 **Retry?** If a previous attempt is visible in this conversation, skip the full Kickoff: verify actual state first (protocol rule 9), then send a **Progress** checklist reflecting verified state and continue from the first incomplete step. Don't re-ask questions the owner already answered (bot name, chosen options) — but do re-verify everything the machine controls.
 
@@ -244,12 +248,19 @@ Save these for Step 4:
 - `token` (shown once)
 - `webhook_secret` (shown once)
 
-**Path B additionally returns** `claim_code` and `claim_url`. The `claim_url` is the one thing you DO show the owner (it is not a secret like `token`/`webhook_secret`) — present it and ask them to open it.
+**Path B additionally returns** `claim_code` and `claim_url`. The `claim_url` is the one thing you DO show the owner (it is not a secret like `token`/`webhook_secret`) — present it and ask them to open it. Print it **complete and unmasked**, on its own line, exactly as the API returned it:
+
+```
+Open this link to claim your bot:
+https://web.heybinder.com/claim?code=1a2b3c4d5e6f7a8b
+```
+
+Not `…/claim?code=***`, not `…/claim?code=1a2b…`, not a shortened or "safe" version. The owner cannot finish setup without every character of that code.
 
 > **Security:** `token` and `webhook_secret` are returned only at creation. Store them immediately in config. Never echo them to the owner. (`claim_url` is safe to show — it's the owner's claim link.)
 
 **Error handling (translate for the owner — don't paste JSON):**
-- `409` — "That bot name is taken." Suggest 2 alternatives, ask owner to pick, retry. Does NOT count as a strike.
+- `409` — the **username** is taken (the display name doesn't have to be unique). Add a short suffix yourself and retry immediately, up to twice — do not interrupt the owner. Only if both retries collide, offer 2 alternatives. Does NOT count as a strike.
 - `400` with an owner-token error — Blocked message: "Your Binder token isn't valid — it may have been regenerated. Please copy a fresh one from Binder → Account Settings → AI Agents and paste it here." (This route is unauthenticated, so a bad owner token is a `400`, not a `401`.)
 - `400` for anything else — fix the request yourself (field format issue); counts as a strike.
 
@@ -456,9 +467,44 @@ curl -s -X POST "${API_URL}/api/bots/v1/verify-callback" \
 ```
 
 > Bot auth again (`BOT_TOKEN` + `X-Bot-ID`), same as the PATCH above.
+> Omit the body (`-d '{}'`) to test the callback URL already registered on the bot.
 
-Reachable: `{ "reachable": true, "latency_ms": 45 }` — continue.
-Unreachable: `{ "reachable": false, "error": "connection_refused" }` — check in order: tunnel still running, `callback_url` matches tunnel URL + `/binder`, gateway restarted after config, `webhookSecret` correct. Two failed fix attempts → Blocked message.
+The response is a **checklist** — read it instead of guessing. `ok: true` means every step passed:
+
+```json
+{
+  "ok": false,
+  "reachable": true,
+  "latency_ms": 45,
+  "failed_step": "webhook_delivered",
+  "checks": [
+    { "step": "url_valid",          "status": "pass", "detail": "https://x.trycloudflare.com/binder" },
+    { "step": "dns_resolves",       "status": "pass" },
+    { "step": "connected",          "status": "pass", "detail": "TLS handshake ok, replied in 45ms" },
+    { "step": "webhook_delivered",  "status": "fail", "detail": "your endpoint answered HTTP 404", "hint": "…" },
+    { "step": "response_signature", "status": "skip" },
+    { "step": "nonce_echo",         "status": "skip" }
+  ],
+  "response_body_preview": "…"
+}
+```
+
+Statuses: `pass`, `warn` (works but off-spec — does not block setup), `fail`, `skip` (never reached). Fix what `failed_step` names, then re-run:
+
+| `failed_step` | What it means here | Fix |
+|---|---|---|
+| `url_valid` / `dns_resolves` | The URL isn't public HTTPS, or the tunnel hostname is gone | Back to Step 3 — the tunnel died or the URL is stale |
+| `connected` (timeout) | Gateway accepted but never answered | `openclaw gateway restart`, check `openclaw logs binder` |
+| `connected` (refused) | Nothing listening at that address | Tunnel not running, or `callback_url` ≠ current tunnel URL |
+| `webhook_delivered` HTTP 404 | Webhook path mismatch | `callback_url` path must equal `channels.binder.accounts.<id>.webhookPath` (e.g. `/binder`) |
+| `webhook_delivered` HTTP 401 | Plugin rejected Binder's signature | `webhookSecret` in config ≠ the one from registration |
+| `response_signature` (`signature_mismatch`) | Reply signed with a different secret | Same cause as 401 — re-copy `webhookSecret`, restart gateway |
+| `response_signature` (`response_not_signed`) | Plugin predates response signing | Update the plugin to ≥ 2026.7.27.0 and restart the gateway — unsigned replies fail the check |
+| `nonce_echo` | Something other than this plugin answered | Another service owns that path/port |
+
+Never report `signature_mismatch` (or any raw code) to the owner — translate the `hint` into one plain sentence. Two failed fix attempts on the same step → Blocked message.
+
+**Re-runnable any time.** This probe changes nothing, so use it whenever the owner says the bot went quiet, after moving or restarting a tunnel, or before asking them to check anything on their side. "It stopped working" → run this first, then report which step broke.
 
 ### 4d. Verify channel health
 
