@@ -284,7 +284,7 @@ async function handleBinderWebhookRequest(
 
       processBinderEvent(payload.event, payload.data, target).catch((err) => {
         target.runtime.error?.(
-          `[${target.account.accountId}] Binderr webhook processing failed: ${String(err)}`,
+          `[${target.account.accountId}] Binder webhook processing failed: ${String(err)}`,
         );
       });
 

@@ -46,7 +46,7 @@ export async function postBinderMessage(params: {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     binderError(verbose, `POST failed: ${res.status} ${body}`);
-    throw new Error(`Binderr API error ${res.status}: ${body}`);
+    throw new Error(`Binder API error ${res.status}: ${body}`);
   }
 
   // Both /incoming branches return the created message under
@@ -98,7 +98,7 @@ export async function editBinderMessage(params: {
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     binderError(verbose, `PATCH failed: ${res.status} ${body}`);
-    throw new Error(`Binderr API error ${res.status}: ${body}`);
+    throw new Error(`Binder API error ${res.status}: ${body}`);
   }
 
   binderLog(verbose, `PATCH success: ${res.status}`);
@@ -217,7 +217,7 @@ export async function uploadBinderAttachment(params: {
   if (!initRes.ok) {
     const body = await initRes.text().catch(() => "");
     binderError(verbose, `attachment init failed: ${initRes.status} ${body}`);
-    throw new Error(`Binderr attachment init error ${initRes.status}: ${body}`);
+    throw new Error(`Binder attachment init error ${initRes.status}: ${body}`);
   }
   const { id, signedUrl } = (await initRes.json()) as { id: string; signedUrl: string };
 
@@ -253,7 +253,7 @@ export async function uploadBinderMedia(params: {
 }
 
 /**
- * Probe the Binderr API to verify the bot token is valid.
+ * Probe the Binder API to verify the bot token is valid.
  * Uses the dedicated /api/bots/v1/ping endpoint.
  */
 export async function probeBinderToken(account: ResolvedBinderAccount): Promise<{
