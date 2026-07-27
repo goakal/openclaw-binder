@@ -499,7 +499,7 @@ Statuses: `pass`, `warn` (works but off-spec — does not block setup), `fail`, 
 | `webhook_delivered` HTTP 404 | Webhook path mismatch | `callback_url` path must equal `channels.binder.accounts.<id>.webhookPath` (e.g. `/binder`) |
 | `webhook_delivered` HTTP 401 | Plugin rejected Binder's signature | `webhookSecret` in config ≠ the one from registration |
 | `response_signature` (`signature_mismatch`) | Reply signed with a different secret | Same cause as 401 — re-copy `webhookSecret`, restart gateway |
-| `response_signature` (`response_not_signed`) | Plugin predates response signing | Update the plugin to ≥ 2026.7.27.0 and restart the gateway — unsigned replies fail the check |
+| `response_signature` (`response_not_signed`) | Handler does not sign its reply | On this plugin, update to ≥ 2026.7.27.0 and restart the gateway — unsigned replies fail the check |
 | `nonce_echo` | Something other than this plugin answered | Another service owns that path/port |
 
 Never report `signature_mismatch` (or any raw code) to the owner — translate the `hint` into one plain sentence. Two failed fix attempts on the same step → Blocked message.
