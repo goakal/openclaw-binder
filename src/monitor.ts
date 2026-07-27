@@ -94,6 +94,18 @@ type BinderWebhookPayload = {
   data: BinderInboundData;
 };
 
+/**
+ * Sign an outbound body the same way Binder signs inbound requests.
+ *
+ * Binder's verify-callback probe checks this header on our ping reply: it
+ * is what proves the endpoint that answered is really this gateway and not
+ * a tunnel error page or a catch-all proxy that happens to return 200.
+ * Without it the probe reports `response_signature: warn`.
+ */
+function signBinderBody(body: string, secret: string): string {
+  return "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+}
+
 function verifyBinderSignature(body: string, signature: string, secret: string): boolean {
   const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
   const a = Buffer.from(expected, "utf8");
@@ -198,9 +210,13 @@ async function handleBinderWebhookRequest(
       }
       const rawBody = bodyResult.value;
 
-      // Binderr backend sends these header names (protocol-level, not renamed)
-      const signatureHeader = req.headers["x-binderr-signature"] as string | undefined;
-      const timestampHeader = req.headers["x-binderr-timestamp"];
+      // Binder sends `X-Binder-*`; `X-Binderr-*` (double "r") is the historical
+      // spelling, still emitted by the backend during the deprecation window
+      // and by any backend older than this plugin. Accept either.
+      const signatureHeader = (req.headers["x-binder-signature"] ??
+        req.headers["x-binderr-signature"]) as string | undefined;
+      const timestampHeader =
+        req.headers["x-binder-timestamp"] ?? req.headers["x-binderr-timestamp"];
 
       if (!signatureHeader) {
         res.statusCode = 401;
@@ -236,9 +252,16 @@ async function handleBinderWebhookRequest(
       if (payload.event === "ping") {
         target.runtime.log?.(`[${target.account.accountId}] Webhook ping`);
         target.statusSink?.({ lastInboundAt: Date.now() });
+        // Echo the nonce and sign the reply — Binder's probe grades both.
+        const pingBody = JSON.stringify({ ok: true, nonce: payload.data?.nonce ?? null });
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, nonce: payload.data?.nonce ?? null }));
+        const pingSig = signBinderBody(pingBody, target.account.config.webhookSecret);
+        // Both spellings: a backend older than the rename only reads the
+        // legacy one, and it grades an unsigned reply as a failure.
+        res.setHeader("X-Binder-Signature", pingSig);
+        res.setHeader("X-Binderr-Signature", pingSig);
+        res.end(pingBody);
         return true;
       }
 

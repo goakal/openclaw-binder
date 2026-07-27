@@ -4,41 +4,20 @@ Chat with your AI assistant from Binder group chats via @mentions.
 
 > **For users:** Paste one of these prompts to your OpenClaw agent to set up Binder.
 >
+> Each prompt is deliberately **one single line**. Some agent CLIs treat every
+> newline in a paste as "send", which would split the prompt into half a dozen
+> half-messages — keep it on one line when you copy it.
+>
 > **Have a Binder account** (owner token from account settings):
 >
 > ```
-> Connect yourself to Binder — a group-chat app — so my groups can talk
-> to you by @mentioning your bot.
->
-> Owner token: <your-owner-token-from-binder-account-settings>
-> Binder API URL: https://api.heybinder.com
-> Setup guide: https://github.com/goakal/openclaw-binder
-> (install the plugin from there, then follow its binder-channel-setup skill)
->
-> HOW TO WORK WITH ME DURING SETUP — these rules override your defaults:
-> - Before running anything, tell me in plain words what Binder is and
->   show the 5-step plan as a checklist (✅ done / ⏳ doing / 🔲 todo /
->   🙋 needs me). Update the checklist after every step.
-> - No raw command output, JSON, or jargon — translate everything into
->   one plain sentence.
-> - Mark clearly which steps are yours and which are mine.
-> - After showing the plan, proceed on your own — never ask me to choose
->   between options you haven't actually tried.
-> - If a step fails twice, STOP retrying. Tell me what's stuck in plain
->   words, give 2–3 options with your recommendation, and tell me
->   exactly what to do or click.
-> - Never show me tokens or secrets.
-> - End every message with either "Next, I will …" or "I need you to …".
+> Connect yourself to Binder — a group-chat app — so my groups can talk to you by @mentioning your bot. Owner token: <your-owner-token-from-binder-account-settings>. Binder API URL: https://api.heybinder.com. Setup: install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill. How to work with me during setup, overriding your defaults: tell me in plain words what Binder is and show the 5-step plan as a checklist (✅ done / ⏳ doing / 🔲 todo / 🙋 needs me) before running anything, and update it after every step; no raw command output, JSON, or jargon — one plain sentence per error; mark which steps are yours and which are mine; pick the bot's name and handle yourself and keep going — never ask me to choose between options you haven't actually tried; if a step fails twice, STOP retrying and give me 2–3 options with your recommendation and exactly what to click; never show me tokens or secrets; when everything works, tell me the bot's @handle and how to @mention it in a group; end every message with "Next, I will …" or "I need you to …".
 > ```
 >
 > **No Binder account yet** (register first, then claim via a link — no token needed):
 >
 > ```
-> Set up Binder on my OpenClaw gateway.
-> Install plugin from https://github.com/goakal/openclaw-binder (download latest .tgz, openclaw plugins install, gateway restart).
-> Then use the binder-channel-setup skill to register me WITHOUT an owner token (Step 2, Path B).
-> When you get the claim_url back, show it to me so I can claim the bot into my account.
-> Binder API URL: https://api.heybinder.com
+> Connect yourself to Binder — a group-chat app — so I can talk to you by @mentioning your bot. Binder API URL: https://api.heybinder.com. I don't have a Binder account yet, so install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, registering WITHOUT an owner token (Step 2, Path B). The registration response includes a claim_url — show it to me in full, exactly as returned: it is not a secret, so never mask, shorten, or star out any part of the code, or the link won't work. How to work with me during setup, overriding your defaults: tell me in plain words what Binder is and show the plan as a checklist before running anything, and update it after every step; no raw command output, JSON, or jargon — one plain sentence per error; pick the bot's name and handle yourself and keep going — never ask me to choose between options you haven't actually tried; if a step fails twice, STOP retrying and give me 2–3 options with your recommendation and exactly what to click; never show me tokens or secrets; end every message with "Next, I will …" or "I need you to …".
 > ```
 >
 > The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group). In the no-account flow it also hands you a `claim_url` to finish setup.
