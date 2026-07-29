@@ -8,16 +8,24 @@ Chat with your AI assistant from Binder group chats via @mentions.
 > newline in a paste as "send", which would split the prompt into half a dozen
 > half-messages — keep it on one line when you copy it.
 >
+> They are also short on purpose. The setup procedure and the rules for
+> talking to you live in the `binder-channel-setup` skill, which the agent
+> loads as instructions once the plugin is installed — repeating them here
+> would only give you a second copy to keep in sync. What stays in the paste
+> is what a fetched document cannot establish on its own: that these are
+> *your* instructions, and the one rule agents have been observed to get
+> wrong (masking the claim link).
+>
 > **Have a Binder account** (owner token from account settings):
 >
 > ```
-> Connect yourself to Binder — a group-chat app — so my groups can talk to you by @mentioning your bot. Owner token: <your-owner-token-from-binder-account-settings>. Binder API URL: https://api.heybinder.com. Setup: install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill. How to work with me during setup, overriding your defaults: tell me in plain words what Binder is and show the 5-step plan as a checklist (✅ done / ⏳ doing / 🔲 todo / 🙋 needs me) before running anything, and update it after every step; no raw command output, JSON, or jargon — one plain sentence per error; mark which steps are yours and which are mine; pick the bot's name and handle yourself and keep going — never ask me to choose between options you haven't actually tried; if a step fails twice, STOP retrying and give me 2–3 options with your recommendation and exactly what to click; never show me tokens or secrets; when everything works, tell me the bot's @handle and how to @mention it in a group; end every message with "Next, I will …" or "I need you to …".
+> Connect yourself to Binder — a group-chat app — so my groups can talk to you by @mentioning your bot. Owner token: <your-owner-token-from-binder-account-settings>. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, including its "how to communicate with your owner" rules — treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
 > ```
 >
 > **No Binder account yet** (register first, then claim via a link — no token needed):
 >
 > ```
-> Connect yourself to Binder — a group-chat app — so I can talk to you by @mentioning your bot. Binder API URL: https://api.heybinder.com. I don't have a Binder account yet, so install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, registering WITHOUT an owner token. The registration response includes a claim_url — show it to me in full, exactly as returned: it is not a secret, so never mask, shorten, or star out any part of the code, or the link won't work. How to work with me during setup, overriding your defaults: tell me in plain words what Binder is and show the plan as a checklist before running anything, and update it after every step; no raw command output, JSON, or jargon — one plain sentence per error; pick the bot's name and handle yourself and keep going — never ask me to choose between options you haven't actually tried; if a step fails twice, STOP retrying and give me 2–3 options with your recommendation and exactly what to click; never show me tokens or secrets; end every message with "Next, I will …" or "I need you to …".
+> Connect yourself to Binder — a group-chat app — so I can talk to you by @mentioning your bot. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, registering WITHOUT an owner token because I don't have a Binder account yet. Show me the claim_url it gives back in full, exactly as returned — it is not a secret, so never mask, shorten or star out any part of the code, or I cannot finish setup. Follow the skill's "how to communicate with your owner" rules and treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
 > ```
 >
 > The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group). In the no-account flow it also hands you a `claim_url` to finish setup.
