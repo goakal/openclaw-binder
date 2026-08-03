@@ -298,7 +298,10 @@ async function processBinderEvent(
 
   binderLog(verbose, "processBinderEvent:", event, data.message_id, data.sender.id, data.group_id);
 
-  const rawPeerId = isDm ? (data.conversation_id || data.message_id) : (data.thread_id || data.group_id);
+  // Session key: DMs scope on conversation_id, else the sender's user id (never
+  // message_id — that changes per message and would lose continuity). Groups
+  // scope on thread_id, else group_id. See backend agent-webhook-events.md.
+  const rawPeerId = isDm ? (data.conversation_id || data.sender.id) : (data.thread_id || data.group_id);
   if (!rawPeerId) {
     binderLog(verbose, "processBinderEvent: no peer id, dropping");
     return;
