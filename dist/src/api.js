@@ -1,4 +1,85 @@
 import { binderLog, binderError } from "./log.js";
+import { BINDER_PUBLISHED_COMMANDS } from "./commands.js";
+function binderBotHeaders(account, json = false) {
+    return {
+        ...(json ? { "Content-Type": "application/json" } : {}),
+        Authorization: `Bearer ${account.config.token}`,
+        "X-Bot-ID": account.config.botId,
+    };
+}
+async function readBinderJson(res, operation) {
+    if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`${operation} failed (${res.status}): ${body}`);
+    }
+    return (await res.json());
+}
+/**
+ * Replace Binder's slash-command menu with the commands this adapter handles.
+ * Called at gateway startup so a plugin upgrade or backend reset self-heals.
+ */
+export async function syncBinderCommands(account) {
+    const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/commands`;
+    const verbose = account.config.verbose ?? false;
+    const res = await fetch(url, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${account.config.token}`,
+            "X-Bot-ID": account.config.botId,
+        },
+        body: JSON.stringify({ commands: BINDER_PUBLISHED_COMMANDS }),
+    });
+    if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Binder command sync failed (${res.status}): ${body}`);
+    }
+    const body = (await res.json());
+    const expected = BINDER_PUBLISHED_COMMANDS.map((command) => command.name);
+    const actual = (body.commands ?? []).map((command) => command.name ?? "");
+    if (expected.length !== actual.length || expected.some((name, i) => name !== actual[i])) {
+        throw new Error(`Binder command sync mismatch: expected ${expected.join(", ")}; got ${actual.join(", ")}`);
+    }
+    binderLog(verbose, `Slash commands synced: ${actual.map((name) => `/${name}`).join(", ")}`);
+}
+/** Create a Binder-native schedule that is visible and cancellable in Binder. */
+export async function createBinderScheduledMessage(params) {
+    const { account, groupId, content, mode, timezone, schedule } = params;
+    const base = account.config.apiUrl.replace(/\/$/, "");
+    const res = await fetch(`${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages`, {
+        method: "POST",
+        headers: binderBotHeaders(account, true),
+        body: JSON.stringify({
+            content,
+            ...(mode ? { mode } : {}),
+            ...(timezone ? { timezone } : {}),
+            schedule,
+        }),
+    });
+    const body = await readBinderJson(res, "Binder schedule creation");
+    return body.data;
+}
+/** List schedules created by this bot in the current Binder group. */
+export async function listBinderScheduledMessages(params) {
+    const { account, groupId, filter = "all", limit = 50 } = params;
+    const base = account.config.apiUrl.replace(/\/$/, "");
+    const query = new URLSearchParams({
+        filter,
+        limit: String(limit),
+    });
+    const res = await fetch(`${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages?${query}`, { headers: binderBotHeaders(account) });
+    return readBinderJson(res, "Binder schedule listing");
+}
+/** Cancel a Binder-native schedule previously created by this bot. */
+export async function cancelBinderScheduledMessage(params) {
+    const { account, groupId, scheduledMessageId } = params;
+    const base = account.config.apiUrl.replace(/\/$/, "");
+    const res = await fetch(`${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages/${encodeURIComponent(scheduledMessageId)}`, {
+        method: "DELETE",
+        headers: binderBotHeaders(account),
+    });
+    return readBinderJson(res, "Binder schedule cancellation");
+}
 export async function postBinderMessage(params) {
     const { account, groupId, parentMessageId, content, isDm, attachmentIds } = params;
     const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/incoming`;

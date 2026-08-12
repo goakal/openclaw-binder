@@ -2,9 +2,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-options-runtime";
 import { createWebhookInFlightLimiter, readWebhookBodyOrReject, registerWebhookTargetWithPluginRoute, resolveWebhookPath, withResolvedWebhookRequestPipeline, } from "openclaw/plugin-sdk/webhook-ingress";
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
-import { postBinderMessage, uploadBinderMedia } from "./api.js";
+import { postBinderMessage, syncBinderCommands, uploadBinderMedia } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 import { setBinderLastMessageId } from "./channel.js";
+import { formatBinderCommandInvocation, isProcessableBinderEvent, } from "./commands.js";
+import { setBinderSessionGroupId } from "./scheduling-tools.js";
 import { binderLog, binderError } from "./log.js";
 /** Binder's server-side limit on `attachment_ids` per message. */
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
@@ -150,7 +152,8 @@ async function handleBinderWebhookRequest(req, res) {
                 res.end(pingBody);
                 return true;
             }
-            if (!["message_created", "direct_message"].includes(payload.event) || !payload.data) {
+            if (!isProcessableBinderEvent(payload.event) ||
+                !payload.data) {
                 res.statusCode = 200;
                 res.end("{}");
                 return true;
@@ -173,8 +176,12 @@ async function processBinderEvent(event, data, target) {
     const { account, config, runtime } = target;
     const verbose = account.config.verbose ?? false;
     const isDm = event === "direct_message";
+    const isCommand = event === "command_invoked";
     binderLog(verbose, "processBinderEvent:", event, data.message_id, data.sender.id, data.group_id);
-    const rawPeerId = isDm ? (data.conversation_id || data.message_id) : (data.thread_id || data.group_id);
+    // Session key: DMs scope on conversation_id, else the sender's user id (never
+    // message_id — that changes per message and would lose continuity). Groups
+    // scope on thread_id, else group_id. See backend agent-webhook-events.md.
+    const rawPeerId = isDm ? (data.conversation_id || data.sender.id) : (data.thread_id || data.group_id);
     if (!rawPeerId) {
         binderLog(verbose, "processBinderEvent: no peer id, dropping");
         return;
@@ -187,11 +194,18 @@ async function processBinderEvent(event, data, target) {
     const strippedBody = isDm ? rawBody : rawBody
         .replace(new RegExp(`@${account.config.botUsername}\\b`, "gi"), "")
         .trim();
+    const agentBody = isCommand
+        ? formatBinderCommandInvocation({
+            command: data.command,
+            fallbackBody: strippedBody,
+            groupId: data.group_id,
+        })
+        : strippedBody;
     const attachments = data.attachments ?? [];
     const viewableMedia = attachments.filter(isViewableMedia);
     const otherAttachments = attachments.filter((a) => !isViewableMedia(a));
     binderLog(verbose, "processBinderEvent: attachments=", attachments.length, "viewable=", viewableMedia.length);
-    if (!strippedBody && attachments.length === 0) {
+    if (!agentBody && attachments.length === 0) {
         binderLog(verbose, "processBinderEvent: empty body, dropping");
         return;
     }
@@ -202,10 +216,10 @@ async function processBinderEvent(event, data, target) {
     const attachmentNote = otherAttachments.length > 0
         ? otherAttachments.map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`).join(" ")
         : "";
-    const mediaNote = !strippedBody && viewableMedia.length > 0
+    const mediaNote = !agentBody && viewableMedia.length > 0
         ? `[${viewableMedia.length === 1 ? "attachment" : `${viewableMedia.length} attachments`}: ${viewableMedia.map(describeAttachment).join(", ")}]`
         : "";
-    const cleanBody = [strippedBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
+    const cleanBody = [agentBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
     // The webhook only carries the single triggering message; `history` (when
     // the Binder backend sends it) adds the recent thread turns from other
     // senders that this bot's local session never saw. Prepended as plain
@@ -228,6 +242,9 @@ async function processBinderEvent(event, data, target) {
         runtime: core.channel,
         sessionStore: config.session?.store,
     });
+    if (!isDm) {
+        setBinderSessionGroupId(route.sessionKey, apiPeerId, account.accountId);
+    }
     const { storePath, body } = buildEnvelope({
         channel: "binder",
         from: data.sender.name || `user:${data.sender.id}`,
@@ -243,7 +260,7 @@ async function processBinderEvent(event, data, target) {
         RawBody: rawBody,
         // Command parsing must see only what the user typed — not the synthesized
         // attachment notes.
-        CommandBody: strippedBody,
+        CommandBody: agentBody,
         // Inbound media the runtime can look at. Paths are left unset so core
         // stages (downloads) the URLs itself, the same as other URL-based channels.
         ...(viewableMedia.length > 0
@@ -380,6 +397,11 @@ export function monitorBinderProvider(options) {
         statusSink: options.statusSink,
     });
     options.runtime.log?.(`[${options.account.accountId}] Binder webhook listener registered at ${webhookPath}`);
+    // Binder does not invent commands for webhook bots. Keep its menu in sync
+    // with this adapter's real command surface every time the gateway starts.
+    void syncBinderCommands(options.account).catch((err) => {
+        options.runtime.error?.(`[${options.account.accountId}] Binder slash-command sync failed: ${String(err)}`);
+    });
     return unregister;
 }
 export function resolveBinderWebhookPath(params) {

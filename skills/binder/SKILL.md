@@ -1,6 +1,6 @@
 ---
 name: binder
-description: "Discover and use Binder capabilities from the live backend tool catalog. New tool families (notes, course, groups, etc.) are available automatically — no skill update needed."
+description: "Discover Binder capabilities from the live backend catalog, then use the plugin-native path or a bot-authenticated HTTP route the adapter actually supports."
 metadata:
   {
     "openclaw":
@@ -15,13 +15,14 @@ metadata:
 
 Binder exposes tool capabilities via a **live catalog** at the backend. This skill tells you how to discover and use them.
 
-**Key principle:** Any tool family deployed on the Binder backend is available here. The catalog is fetched live — no plugin release, no skill update, no per-family content to install.
+**Key principle:** Any tool family deployed on the Binder backend is discoverable here. Discovery is not execution: use it only when this plugin has a native path or the family documents a bot-authenticated HTTP route this harness can call.
 
 **Second key principle:** the catalog is written for a *generic* agent talking raw HTTP to Binder. You are not one — you are running behind this channel plugin, which already implements some of those capabilities natively. **When a capability is handled natively, use the native path.** See [Native path vs catalog tools](#native-path-vs-catalog-tools) before reaching for a `binderr_*` tool.
 
 ## When to use
 
 - User asks to use any Binder capability (notes, groups, memory, course, etc.)
+- User invokes `/schedule` or asks for a reminder, recurring message, or digest
 - User says "What can my Binder bot do?"
 - A Binder family is mentioned but you don't have a specific tool skill for it
 - You need to call `binderr_*` tools
@@ -52,6 +53,7 @@ outside this plugin.**
 | Send an image / video | ✅ | Attach the media to your reply as usual. The plugin uploads it and links it to the message. Do **not** call the `attachments` family or the presigned-upload endpoints. |
 | Read an image the user sent | ✅ | It is already in your context — viewable media is handed to you directly, other files appear as `[attachment: name url]`. No fetch tool, no download step. |
 | Notify a group member | ✅ | Write `@username` in the reply text (see below). |
+| Scheduled chats | ✅ | Use `binderr_schedule_message` / `binderr_list_scheduled_messages` / `binderr_cancel_scheduled_message`. They are plugin-native and keep credentials and the current group out of model arguments. |
 | Notes, groups, memory, and every other family | ❌ | Use the catalog tools. |
 | Edit a message you already sent | ❌ (not wired yet) | Use the `messages` family from the catalog. |
 
@@ -71,29 +73,28 @@ curl -s "${BOT_API_URL}/api/bots/v1/skills" \
   -H "X-Bot-ID: ${BOT_ID}"
 ```
 
-**Response:**
+**Response shape:**
 ```json
-[
-  {
-    "id": "notes",
-    "name": "Notes",
-    "description": "Create, read, update, and delete group notes",
-    "version": "1.0.0"
-  },
-  {
-    "id": "groups",
-    "name": "Groups",
-    "description": "Group management and membership tools",
-    "version": "1.0.0"
-  }
-]
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "notes",
+      "title": "Bot Notes",
+      "description": "Create, read, update, and delete notes in a group.",
+      "toolCount": 6,
+      "docUrl": "/api/bots/v1/skills/notes"
+    }
+  ]
+}
 ```
 
 > **Live:** This list reflects exactly what the backend has. A new family (e.g. `course`) appears here the moment it deploys — no plugin release, no skill dir to write.
 
 ### Step 2: Fetch a family's detailed tools
 
-Each family has a detailed spec with tool names, parameters, and usage guidance.
+Each family returns a Markdown document with tool names, parameters, constraints,
+errors, and worked HTTP requests.
 
 ```bash
 curl -s "${BOT_API_URL}/api/bots/v1/skills/notes" \
@@ -101,57 +102,33 @@ curl -s "${BOT_API_URL}/api/bots/v1/skills/notes" \
   -H "X-Bot-ID: ${BOT_ID}"
 ```
 
-**Response:**
-```json
-{
-  "id": "notes",
-  "name": "Notes",
-  "tools": [
-    {
-      "name": "binderr_notes_create",
-      "description": "Create a new note in a group",
-      "parameters": {
-        "group_id": { "type": "string", "required": true, "description": "Binder group ID" },
-        "title": { "type": "string", "required": true, "description": "Note title" },
-        "content": { "type": "string", "required": false, "description": "Note content (markdown)" }
-      }
-    },
-    {
-      "name": "binderr_notes_list",
-      "description": "List notes in a group",
-      "parameters": {
-        "group_id": { "type": "string", "required": true }
-      }
-    }
-  ]
-}
-```
+Read the returned Markdown before acting; its **Example request** is the wire
+contract for that family.
 
-The backend returns the full tool spec (Tool calling style) for each family.
+### Step 3: Execute only supported routes
 
-### Step 3: Call the tools
-
-Tools use the `binderr_` prefix. They are HTTP-based tools that call the Binder API with the bot's credentials.
+Tools use the `binderr_` prefix, but this channel plugin does **not** dynamically register every catalog entry as an OpenClaw function tool. Prefer the native paths above. Otherwise follow the detailed family's bot-authenticated HTTP example from trusted harness-side code.
 
 ```bash
-# Pattern for call_bot_tool / generic tool-calling mechanism
-# (Use the webhook-channel-enriched tool dispatch, not raw curl)
-#
-# The tools are callable via the Binder channel's tool dispatch.
-# The `apiUrl`, `token`, and `botId` from channel config are used automatically.
-#
-# Example tool call (conceptual — the actual dispatch is handled by the channel):
-# tool_use: { name: "binderr_notes_create", input: { group_id: "...", title: "...", content: "..." } }
+# Example pattern only; use the method/path/body from the family document.
+curl -s "${BOT_API_URL}/api/bots/v1/<documented-path>" \
+  -H "Authorization: Bearer ${BOT_TOKEN}" \
+  -H "X-Bot-ID: ${BOT_ID}"
 ```
+
+If the family only points at a logged-in v3 route, it is not executable from
+this webhook adapter. Never substitute the owner's browser session or claim
+that fetching the catalog performed the action.
 
 ### Step 4: Extract credentials from channel config
 
-To call tools manually (e.g. via curl as a fallback), read the configured values:
+For trusted harness-side HTTP calls, resolve the configured values without
+printing them into chat or logs:
 
 ```bash
 openclaw config get channels.binder.accounts.default.apiUrl
 openclaw config get channels.binder.accounts.default.botId
-openclaw config get channels.binder.accounts.default.token
+openclaw config get channels.binder.accounts.default.token  # secret: never echo
 ```
 
 Or for a specific account:
@@ -167,7 +144,8 @@ openclaw config get channels.binder.accounts.<accountId>.token
 
 1. Fetch catalog: notes family is available
 2. Fetch `/skills/notes` for tool params
-3. Call `binderr_notes_create` with group_id, title, content
+3. Follow `binderr_create_note`'s worked HTTP request with the current group,
+   title, and body
 4. The plugin delivers the reply via webhook
 
 ### "What tools do I have?"
@@ -176,12 +154,28 @@ openclaw config get channels.binder.accounts.<accountId>.token
 curl -s "${API_URL}/api/bots/v1/skills" -H "Authorization: Bearer ${TOKEN}" -H "X-Bot-ID: ${BOT_ID}"
 ```
 
-Summarize each family's name, description, and tool count.
+Summarize each entry in the response's `skills` array: title, description, and
+`toolCount`.
 
 ### "Manage groups"
 
 1. Fetch `/skills/groups` for the `binderr_groups_*` tools
-2. Call the appropriate tool with required params
+2. Follow the selected tool's worked HTTP request and required parameters
+
+### "/schedule remind us tomorrow at 09:00"
+
+1. Resolve the time in the requesting user's timezone; ask only if the time is
+   genuinely ambiguous.
+2. Call `binderr_schedule_message`. Choose `announce` for fixed text or
+   `agent_task` when the agent should execute the instruction at fire time.
+3. Read the returned description, timezone, recurrence, and id back to the
+   user.
+4. Use `binderr_list_scheduled_messages` before review/cancellation, and
+   `binderr_cancel_scheduled_message` to stop one.
+
+These are native plugin tools backed by Binder's bot-authenticated scheduling
+routes. Jobs appear in Binder's Scheduled Messages screen. OpenClaw cron is a
+separate option for private/internal gateway jobs the agent chooses to run.
 
 ## Reference: current Binder tool families
 
@@ -190,6 +184,7 @@ Summarize each family's name, description, and tool count.
 | notes | Group notes CRUD | `binderr_notes_*` |
 | groups | Group management | `binderr_groups_*` |
 | memory | Agent memory | `binderr_memory_*` |
+| scheduling | Scheduled messages (native tools are registered by this plugin) | `binderr_*scheduled*` |
 
 > **Note:** This table is informational. Always fetch the live catalog — the backend is the source of truth for what exists. Unlisted families (e.g. `course`, `reactions`) work identically once deployed; no skill update required. A family being in the catalog does not mean calling it by hand is the right move here — check [Native path vs catalog tools](#native-path-vs-catalog-tools) first.
 
@@ -198,9 +193,11 @@ Summarize each family's name, description, and tool count.
 The `@openclaw/binder` plugin implements the Binder channel. When the plugin receives a webhook event:
 
 1. Verifies HMAC-SHA256 signature
-2. Strips the `@botUsername` mention from message content
-3. Hands clean message to OpenClaw's reply pipeline (dispatch + LLM generation)
-4. Sends the reply back via `POST /api/bots/v1/incoming`
+2. Accepts mentions, direct messages, and published `command_invoked` events
+3. Converts Binder slash commands to model-visible instructions (so OpenClaw's own slash parser cannot consume them)
+4. Strips the `@botUsername` mention from ordinary message content
+5. Hands clean message to OpenClaw's reply pipeline (dispatch + LLM generation)
+6. Sends the reply back via `POST /api/bots/v1/incoming`
 
 The tool catalog (`GET /api/bots/v1/skills`) is served by the Binder backend from `src/modules/agent-tools/registry`. Any family registered there is immediately discoverable.
 

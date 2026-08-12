@@ -11,9 +11,15 @@ import {
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk/inbound-envelope";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { ResolvedBinderAccount } from "./accounts.js";
-import { postBinderMessage, uploadBinderMedia } from "./api.js";
+import { postBinderMessage, syncBinderCommands, uploadBinderMedia } from "./api.js";
 import { getBinderRuntime } from "./runtime.js";
 import { setBinderLastMessageId } from "./channel.js";
+import {
+  formatBinderCommandInvocation,
+  isProcessableBinderEvent,
+  type BinderCommandInvocation,
+} from "./commands.js";
+import { setBinderSessionGroupId } from "./scheduling-tools.js";
 
 import { binderLog, binderError } from "./log.js";
 
@@ -87,6 +93,8 @@ type BinderInboundData = {
    * there is nothing to answer.
    */
   attachments?: BinderAttachment[];
+  /** Present on `command_invoked` webhooks. */
+  command?: BinderCommandInvocation;
 };
 
 type BinderWebhookPayload = {
@@ -259,7 +267,10 @@ async function handleBinderWebhookRequest(
         return true;
       }
 
-      if (!["message_created", "direct_message"].includes(payload.event) || !payload.data) {
+      if (
+        !isProcessableBinderEvent(payload.event) ||
+        !payload.data
+      ) {
         res.statusCode = 200;
         res.end("{}");
         return true;
@@ -295,6 +306,7 @@ async function processBinderEvent(
   const { account, config, runtime } = target;
   const verbose = account.config.verbose ?? false;
   const isDm = event === "direct_message";
+  const isCommand = event === "command_invoked";
 
   binderLog(verbose, "processBinderEvent:", event, data.message_id, data.sender.id, data.group_id);
 
@@ -316,6 +328,13 @@ async function processBinderEvent(
   const strippedBody = isDm ? rawBody : rawBody
     .replace(new RegExp(`@${account.config.botUsername}\\b`, "gi"), "")
     .trim();
+  const agentBody = isCommand
+    ? formatBinderCommandInvocation({
+        command: data.command,
+        fallbackBody: strippedBody,
+        groupId: data.group_id,
+      })
+    : strippedBody;
 
   const attachments = data.attachments ?? [];
   const viewableMedia = attachments.filter(isViewableMedia);
@@ -326,7 +345,7 @@ async function processBinderEvent(
     "viewable=", viewableMedia.length,
   );
 
-  if (!strippedBody && attachments.length === 0) {
+  if (!agentBody && attachments.length === 0) {
     binderLog(verbose, "processBinderEvent: empty body, dropping");
     return;
   }
@@ -338,10 +357,10 @@ async function processBinderEvent(
   const attachmentNote = otherAttachments.length > 0
     ? otherAttachments.map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`).join(" ")
     : "";
-  const mediaNote = !strippedBody && viewableMedia.length > 0
+  const mediaNote = !agentBody && viewableMedia.length > 0
     ? `[${viewableMedia.length === 1 ? "attachment" : `${viewableMedia.length} attachments`}: ${viewableMedia.map(describeAttachment).join(", ")}]`
     : "";
-  const cleanBody = [strippedBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
+  const cleanBody = [agentBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
 
   // The webhook only carries the single triggering message; `history` (when
   // the Binder backend sends it) adds the recent thread turns from other
@@ -367,6 +386,9 @@ async function processBinderEvent(
     runtime: core.channel,
     sessionStore: config.session?.store,
   });
+  if (!isDm) {
+    setBinderSessionGroupId(route.sessionKey, apiPeerId, account.accountId);
+  }
 
   const { storePath, body } = buildEnvelope({
     channel: "binder",
@@ -385,7 +407,7 @@ async function processBinderEvent(
     RawBody: rawBody,
     // Command parsing must see only what the user typed — not the synthesized
     // attachment notes.
-    CommandBody: strippedBody,
+    CommandBody: agentBody,
     // Inbound media the runtime can look at. Paths are left unset so core
     // stages (downloads) the URLs itself, the same as other URL-based channels.
     ...(viewableMedia.length > 0
@@ -540,6 +562,14 @@ export function monitorBinderProvider(options: BinderMonitorOptions): () => void
   options.runtime.log?.(
     `[${options.account.accountId}] Binder webhook listener registered at ${webhookPath}`,
   );
+
+  // Binder does not invent commands for webhook bots. Keep its menu in sync
+  // with this adapter's real command surface every time the gateway starts.
+  void syncBinderCommands(options.account).catch((err) => {
+    options.runtime.error?.(
+      `[${options.account.accountId}] Binder slash-command sync failed: ${String(err)}`,
+    );
+  });
 
   return unregister;
 }
