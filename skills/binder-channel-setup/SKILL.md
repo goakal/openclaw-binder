@@ -33,10 +33,10 @@ The owner-communication rules below are **not** in that category. They are how y
 
 Your owner is a person setting up an app, not an engineer reading logs. The setup only feels seamless if you narrate it well. These rules override your default reporting style:
 
-1. **Send the Kickoff message BEFORE running any command** (template below). It explains what Binder is and shows the 5-step plan.
+1. **Send the Kickoff message BEFORE running any command** (template below). It explains what Binder is and shows the 6-step plan.
 2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
 3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
-4. **Separate your work from the owner's work.** Steps 1–4 are yours. Step 5 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
+4. **Separate your work from the owner's work.** Steps 1–5 are yours. Step 6 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
 5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner technical choices you can resolve yourself — e.g. do NOT ask which tunnel *tool* to use; check what's installed (`command -v cloudflared tailscale`) and pick one. Ask only when a step needs something only the owner has (an account login, a software install, a domain), after two failed attempts, or for a genuine product decision that outlives setup — currently exactly one: the temporary-vs-permanent tunnel question in Step 3.
 6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
 7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
@@ -49,7 +49,7 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
    ```
    Rebuild the checklist from what the commands show (✅ only what is verifiably done), continue from the first incomplete step, and re-attempt previously "stuck" steps fresh — a step that failed last time may work now.
 
-### The 5 steps you present to the owner
+### The 6 steps you present to the owner
 
 | # | Step | Who does it |
 |---|------|-------------|
@@ -57,7 +57,8 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 | 2 | Register your bot on Binder | Me (agent) |
 | 3 | Make this gateway reachable from the internet | Me — may need your help |
 | 4 | Connect and verify everything works | Me (agent) |
-| 5 | Add the bot to a group and say hi | You (owner) |
+| 5 | Set up slash commands and scheduled chats | Me (agent) |
+| 6 | Add the bot to a group and say hi | You (owner) |
 
 ### Message templates
 
@@ -67,12 +68,13 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 Binder is a group-chat app. I'm going to connect myself to it as a bot,
 so people in your groups can talk to me by @mentioning me.
 
-Here's the plan — 5 steps:
+Here's the plan — 6 steps:
 🔲 1. Install the Binder plugin on my gateway (me)
 🔲 2. Register your bot on Binder (me)
 🔲 3. Make my gateway reachable from the internet (me — I may need your help)
 🔲 4. Connect and verify everything works (me)
-🔲 5. You add the bot to a group and say hi (you)
+🔲 5. Set up slash commands and scheduled chats (me)
+🔲 6. You add the bot to a group and say hi (you)
 
 I'm registering it as "<chosen name>" with the handle
 @<chosen-username>.ai — tell me any time if you want a
@@ -91,7 +93,8 @@ common reason setup stalls, and renaming later is cheap.
 ✅ 2. Bot registered as @<username>.ai
 ⏳ 3. Making my gateway reachable — working on it
 🔲 4. Connect and verify
-🔲 5. You add the bot to a group
+🔲 5. Set up slash commands and scheduled chats
+🔲 6. You add the bot to a group
 
 Next, I will <one plain sentence>.
 ```
@@ -109,21 +112,23 @@ Your options:
 I need you to: <exact action — command to run, thing to install, or link to click>.
 ```
 
-**Done** (after step 4 verifies green):
+**Done** (after step 5 verifies green):
 
 ```
 🎉 Setup complete — only your part is left.
 
-✅ 1–4 done. Your bot @<username>.ai is live and connected.
+✅ 1–5 done. Your bot @<username>.ai is live, connected, and has
+/schedule and /help in Binder's command menu.
 
-🙋 5. Your turn:
+🙋 6. Your turn:
    1. Open Binder (app or web)
    2. Go to any group chat (or create one)
    3. Add @<username>.ai as a member
    4. Send: "@<username>.ai hello!"
+   5. Type "/" to see /schedule and /help
 
 I'll reply in the group when your message arrives.
-I need you to: do step 5 and tell me if I don't reply within a minute.
+I need you to: do step 6 and tell me if I don't reply within a minute.
 ```
 
 If the owner chose the temporary tunnel in Step 3, append to the Done message:
@@ -157,7 +162,7 @@ If either is missing, send a Blocked message telling the owner where to get it (
 
 # Technical runbook
 
-Internal procedure for the 5 owner-visible steps. Report progress with the templates above; never dump these commands' output at the owner.
+Internal procedure for the 6 owner-visible steps. Report progress with the templates above; never dump these commands' output at the owner.
 
 ## Step 0: Resolve inputs + send Kickoff
 
@@ -296,15 +301,51 @@ openclaw channels status
 
 Expect: `binder  default  ✅  running ...`. If ❌/stopped: check config values match the registration response exactly, gateway restarted, no other plugin on the same webhook path (`openclaw logs binder` for detail). Two failed fix attempts → Blocked message.
 
-## Step 5: Hand over to the owner
+## Step 5: Set up slash commands and scheduled chats
 
-Everything green → send the **Done** template. Step 5 is the owner's: open Binder, add `@<botUsername>` to a group, @mention it. When the first webhook arrives and your reply lands, confirm in chat.
+The plugin synchronizes these commands on every gateway start:
+
+- `/schedule` — create, review, or cancel scheduled Binder deliveries
+- `/help` — show what this agent can do and how to ask
+
+Restarting in Step 4 triggered the sync. Read it back and compare the names:
+
+```bash
+curl -s "${API_URL}/api/bots/v1/commands" \
+  -H "Authorization: Bearer ${BOT_TOKEN}" \
+  -H "X-Bot-ID: ${BOT_ID}"
+```
+
+Both names must be present. A mismatch means Step 5 is incomplete; restart
+once, then follow the two-strikes rule.
+
+### Scheduled chats in Binder
+
+`/schedule` is backed by three credential-safe tools registered by this plugin:
+`binderr_schedule_message`, `binderr_list_scheduled_messages`, and
+`binderr_cancel_scheduled_message`. They resolve the bot account and current
+group from trusted OpenClaw context; never ask the owner for a group id or
+expose the bot token to the model.
+
+For a user-requested reminder or recurring chat, use these Binder-native tools.
+Use `announce` when Binder should post fixed text and `agent_task` when the
+agent must do work when the schedule fires. Use the user's timezone, and repeat
+the resolved schedule, timezone, and returned description before calling the
+step done. The job appears in Binder's Scheduled Messages screen.
+
+OpenClaw cron remains appropriate for private/internal jobs the agent decided
+to run itself. Those jobs live in the gateway rather than Binder; say so if
+that distinction matters.
+
+## Step 6: Hand over to the owner
+
+Everything green → send the **Done** template. Step 6 is the owner's: open Binder, add `@<botUsername>` to a group, @mention it, then type `/` to confirm both commands appear. When the first webhook arrives and your reply lands, confirm in chat.
 
 ---
 
 ## Register another Binder agent (multi-account)
 
-Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, config entry, and webhook path. Use the same owner-communication templates (the plan shrinks to steps 2, 4, 5 — plugin and tunnel already exist).
+Plugin supports multiple Binder accounts on one gateway. Each gets its own bot, config entry, and webhook path. Use the same owner-communication templates (the plan shrinks to registration, connection, command sync, and handover — plugin and tunnel already exist).
 
 Register the new bot exactly as in Step 2, with a different `username` and a `callback_url` ending in the new path, then:
 

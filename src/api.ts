@@ -1,5 +1,152 @@
 import type { ResolvedBinderAccount } from "./accounts.js";
 import { binderLog, binderError } from "./log.js";
+import { BINDER_PUBLISHED_COMMANDS } from "./commands.js";
+
+export type BinderScheduleWire = {
+  repeat: "never" | "daily" | "weekly";
+  starts_at: string;
+  interval?: number;
+  by_weekday?: Array<"MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU">;
+  ends_at?: string | null;
+};
+
+export type BinderScheduledMessage = {
+  id: string;
+  kind: string;
+  status: string;
+  content: string;
+  description?: string;
+  next_run_at?: string | null;
+};
+
+function binderBotHeaders(
+  account: ResolvedBinderAccount,
+  json = false,
+): Record<string, string> {
+  return {
+    ...(json ? { "Content-Type": "application/json" } : {}),
+    Authorization: `Bearer ${account.config.token}`,
+    "X-Bot-ID": account.config.botId,
+  };
+}
+
+async function readBinderJson<T>(
+  res: Response,
+  operation: string,
+): Promise<T> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${operation} failed (${res.status}): ${body}`);
+  }
+  return (await res.json()) as T;
+}
+
+/**
+ * Replace Binder's slash-command menu with the commands this adapter handles.
+ * Called at gateway startup so a plugin upgrade or backend reset self-heals.
+ */
+export async function syncBinderCommands(
+  account: ResolvedBinderAccount,
+): Promise<void> {
+  const url = `${account.config.apiUrl.replace(/\/$/, "")}/api/bots/v1/commands`;
+  const verbose = account.config.verbose ?? false;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${account.config.token}`,
+      "X-Bot-ID": account.config.botId,
+    },
+    body: JSON.stringify({ commands: BINDER_PUBLISHED_COMMANDS }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Binder command sync failed (${res.status}): ${body}`);
+  }
+
+  const body = (await res.json()) as {
+    commands?: Array<{ name?: string }>;
+  };
+  const expected = BINDER_PUBLISHED_COMMANDS.map((command) => command.name);
+  const actual = (body.commands ?? []).map((command) => command.name ?? "");
+  if (expected.length !== actual.length || expected.some((name, i) => name !== actual[i])) {
+    throw new Error(
+      `Binder command sync mismatch: expected ${expected.join(", ")}; got ${actual.join(", ")}`,
+    );
+  }
+
+  binderLog(verbose, `Slash commands synced: ${actual.map((name) => `/${name}`).join(", ")}`);
+}
+
+/** Create a Binder-native schedule that is visible and cancellable in Binder. */
+export async function createBinderScheduledMessage(params: {
+  account: ResolvedBinderAccount;
+  groupId: string;
+  content: string;
+  mode?: "announce" | "agent_task";
+  timezone?: string;
+  schedule: BinderScheduleWire;
+}): Promise<BinderScheduledMessage> {
+  const { account, groupId, content, mode, timezone, schedule } = params;
+  const base = account.config.apiUrl.replace(/\/$/, "");
+  const res = await fetch(
+    `${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages`,
+    {
+      method: "POST",
+      headers: binderBotHeaders(account, true),
+      body: JSON.stringify({
+        content,
+        ...(mode ? { mode } : {}),
+        ...(timezone ? { timezone } : {}),
+        schedule,
+      }),
+    },
+  );
+  const body = await readBinderJson<{ data: BinderScheduledMessage }>(
+    res,
+    "Binder schedule creation",
+  );
+  return body.data;
+}
+
+/** List schedules created by this bot in the current Binder group. */
+export async function listBinderScheduledMessages(params: {
+  account: ResolvedBinderAccount;
+  groupId: string;
+  filter?: "all" | "once" | "repeated" | "sent";
+  limit?: number;
+}): Promise<unknown> {
+  const { account, groupId, filter = "all", limit = 50 } = params;
+  const base = account.config.apiUrl.replace(/\/$/, "");
+  const query = new URLSearchParams({
+    filter,
+    limit: String(limit),
+  });
+  const res = await fetch(
+    `${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages?${query}`,
+    { headers: binderBotHeaders(account) },
+  );
+  return readBinderJson<unknown>(res, "Binder schedule listing");
+}
+
+/** Cancel a Binder-native schedule previously created by this bot. */
+export async function cancelBinderScheduledMessage(params: {
+  account: ResolvedBinderAccount;
+  groupId: string;
+  scheduledMessageId: string;
+}): Promise<unknown> {
+  const { account, groupId, scheduledMessageId } = params;
+  const base = account.config.apiUrl.replace(/\/$/, "");
+  const res = await fetch(
+    `${base}/api/bots/v1/groups/${encodeURIComponent(groupId)}/scheduled-messages/${encodeURIComponent(scheduledMessageId)}`,
+    {
+      method: "DELETE",
+      headers: binderBotHeaders(account),
+    },
+  );
+  return readBinderJson<unknown>(res, "Binder schedule cancellation");
+}
 
 export async function postBinderMessage(params: {
   account: ResolvedBinderAccount;

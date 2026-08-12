@@ -3,8 +3,8 @@
   "kind": "channel",
   "channels": ["binder"],
   "name": "Binder",
-  "description": "OpenClaw Binder channel plugin — respond to @mentions in Binder groups",
-  "version": "2026.7.27.0",
+  "description": "OpenClaw Binder channel plugin — mentions, slash commands, and scheduled chats",
+  "version": "2026.8.12.0",
   "skills": ["./skills"],
   "contracts": {
     "channels": ["binder"]

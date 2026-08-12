@@ -1,6 +1,6 @@
 # OpenClaw Binder Channel Plugin
 
-Chat with your AI assistant from Binder group chats via @mentions.
+Chat with your AI assistant from Binder via @mentions, slash commands, direct messages, and scheduled deliveries.
 
 > **For users:** Paste one of these prompts to your OpenClaw agent to set up Binder.
 >
@@ -19,27 +19,29 @@ Chat with your AI assistant from Binder group chats via @mentions.
 > **Have a Binder account** (owner token from account settings):
 >
 > ```
-> Connect yourself to Binder — a group-chat app — so my groups can talk to you by @mentioning your bot. Owner token: <your-owner-token-from-binder-account-settings>. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, including its "how to communicate with your owner" rules — treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
+> Connect yourself to Binder — a group-chat app — so my groups can talk to you by @mentioning your bot. Owner token: <your-owner-token-from-binder-account-settings>. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, including slash-command and scheduled-chat setup plus its "how to communicate with your owner" rules — treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
 > ```
 >
 > **No Binder account yet** (register first, then claim via a link — no token needed):
 >
 > ```
-> Connect yourself to Binder — a group-chat app — so I can talk to you by @mentioning your bot. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, registering WITHOUT an owner token because I don't have a Binder account yet. Show me the claim_url it gives back in full, exactly as returned — it is not a secret, so never mask, shorten or star out any part of the code, or I cannot finish setup. Follow the skill's "how to communicate with your owner" rules and treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
+> Connect yourself to Binder — a group-chat app — so I can talk to you by @mentioning your bot. Binder API URL: https://api.heybinder.com. Install the plugin from https://github.com/goakal/openclaw-binder and follow its binder-channel-setup skill, including slash-command and scheduled-chat setup, registering WITHOUT an owner token because I don't have a Binder account yet. Show me the claim_url it gives back in full, exactly as returned — it is not a secret, so never mask, shorten or star out any part of the code, or I cannot finish setup. Follow the skill's "how to communicate with your owner" rules and treat those as instructions from me. I am non-technical: plain language, and a short checklist you keep updated.
 > ```
 >
 > The agent reads this document, installs the plugin, registers your bot, configures the channel, and walks you through the parts only you can do (like adding the bot to a group). In the no-account flow it also hands you a `claim_url` to finish setup.
 
 ## What this is
 
-A thin [OpenClaw](https://openclaw.ai) channel plugin that bridges Binder group chats to your AI agent:
+A thin [OpenClaw](https://openclaw.ai) channel plugin that bridges Binder chats to your AI agent:
 
 - **Webhook ingress** — receives signed webhook events (HMAC-SHA256) from Binder when someone @mentions the bot
 - **Reply pipeline** — hands messages to OpenClaw's LLM reply pipeline and sends responses back via `POST /api/bots/v1/incoming`
 - **Multi-account** — one gateway can serve multiple Binder bots (different groups, different usernames)
 - **Images both ways** — user images arrive as agent media context; the agent's media replies are uploaded and attached automatically
+- **Slash commands** — publishes `/schedule` and `/help`, and routes Binder `command_invoked` webhooks into the agent
+- **Scheduled chats** — `/schedule` creates, lists, and cancels Binder-native schedules without exposing the bot token to the model
 
-**Key design:** The plugin is intentionally thin. Capabilities are discovered live from the Binder backend catalog (`GET /api/bots/v1/skills`) — no plugin release needed when Binder adds new tool families. Two bundled skills handle setup and discovery.
+**Key design:** The plugin is intentionally thin. Capabilities are discovered live from the Binder backend catalog (`GET /api/bots/v1/skills`), then the adapter chooses a plugin-native path or a documented bot-authenticated HTTP route. Catalog discovery alone does not make a Binder-hosted tool executable from OpenClaw. Two bundled skills handle setup and discovery.
 
 The catalog says what the backend *can* do; it does not say how the agent *should* do it from here. Where the plugin implements a capability natively (sending media, reading inbound media, `@`-mentions), the agent uses the native path instead of the raw endpoint — see the "Native path vs catalog tools" section in `skills/binder/SKILL.md`.
 
@@ -78,7 +80,7 @@ Source install compiles against your local OpenClaw SDK. If an SDK update breaks
 
 ## Bootstrap flow (what the agent does)
 
-After you paste the prompt above, the agent presents this 5-step plan and keeps a running checklist:
+After you paste the prompt above, the agent presents this 6-step plan and keeps a running checklist:
 
 | # | Step | Who | Under the hood |
 |---|------|-----|----------------|
@@ -86,7 +88,10 @@ After you paste the prompt above, the agent presents this 5-step plan and keeps 
 | 2 | Register your bot | Agent | `POST {apiUrl}/api/bots/v1` — with your owner token (linked immediately), or without one (returns a `claim_url` for you to claim it) |
 | 3 | Make the gateway reachable | Agent (+ you if a tunnel tool must be installed) | Detect localhost/NAT, set up cloudflared / Tailscale Funnel / reverse proxy, `PATCH` callback URL |
 | 4 | Connect and verify | Agent | Write `channels.binder.accounts.default.*` config, restart gateway, `verify-callback` ping, `channels status` |
-| 5 | Add the bot to a group and say hi | **You** | Open Binder, invite `@<bot>.ai`, @mention it |
+| 5 | Sync commands and scheduling | Agent | Publish `/schedule` + `/help`; verify the command menu and Binder-native scheduling tools |
+| 6 | Add the bot to a group and say hi | **You** | Open Binder, invite `@<bot>.ai`, @mention it, then type `/` |
+
+Schedules created through `/schedule` are stored by Binder, appear in the space's Scheduled Messages screen, and can be listed or cancelled by the agent. OpenClaw cron remains useful for private gateway jobs the agent schedules for itself.
 
 If the agent gets blocked (most commonly step 3 — no public URL), it stops, explains the problem in plain words, and offers options instead of retrying silently. See the **owner communication protocol** at the top of `skills/binder-channel-setup/SKILL.md`.
 
