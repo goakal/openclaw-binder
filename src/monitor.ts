@@ -88,6 +88,14 @@ type BinderInboundData = {
    */
   history?: BinderHistoryEntry[];
   /**
+   * The thread's originating ("starting") message — the post the thread hangs
+   * off — as the topic anchor. Added in Binder webhook contract v2; on v1 this
+   * message rode at the front of `history` instead. `null` for a top-level
+   * mention (no thread yet) or when that message was deleted, and absent on a
+   * v1 backend — treat all three the same. Same shape as a history entry.
+   */
+  thread_parent?: BinderHistoryEntry | null;
+  /**
    * Attachments on the triggering message. Omitted by older backends. A
    * message can be attachment-only, so an empty `content` does not mean
    * there is nothing to answer.
@@ -101,6 +109,14 @@ type BinderWebhookPayload = {
   event: string;
   data: BinderInboundData;
 };
+
+/**
+ * The Binder webhook contract version this plugin is written against, sent by
+ * Binder as `X-Binder-Version`. v2 added `thread_parent`. A received version
+ * higher than this means the contract moved on — re-read the changelog
+ * (`/docs/agents/webhook-changelog.md`) before assuming a bug.
+ */
+const TARGETED_BINDER_WEBHOOK_VERSION = 2;
 
 /**
  * Sign an outbound body the same way Binder signs inbound requests.
@@ -137,23 +153,38 @@ function describeAttachment(attachment: BinderAttachment): string {
   return `${attachment.name || attachment.id} (${attachment.type || "unknown"})`;
 }
 
+/** `sender: text [attachment: ...]` for one message, or "" when it is empty. */
+function formatEntryLine(m: BinderHistoryEntry): string {
+  const sender = m.sender.name || m.sender.username || m.sender.id;
+  const content = (m.content ?? "").trim();
+  // An attachment-only turn used to be filtered out entirely, which
+  // silently erased "user posted a screenshot" from the context.
+  const attachments = (m.attachments ?? [])
+    .map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`)
+    .join(" ");
+  const line = [content, attachments].filter(Boolean).join(" ");
+  return line ? `${sender}: ${line}` : "";
+}
+
+/**
+ * The thread's originating message, pinned as the topic anchor ahead of the
+ * recent turns. Empty string when there is no parent (top-level mention, a v1
+ * backend, or a deleted/empty starting message), so the caller can concatenate
+ * it unconditionally.
+ */
+function formatThreadParentContext(parent: BinderHistoryEntry | null | undefined): string {
+  if (!parent) {
+    return "";
+  }
+  const line = formatEntryLine(parent);
+  return line ? `[Thread topic]\n${line}\n\n` : "";
+}
+
 function formatHistoryContext(history: BinderHistoryEntry[] | undefined): string {
   if (!history || history.length === 0) {
     return "";
   }
-  const lines = history
-    .map((m) => {
-      const sender = m.sender.name || m.sender.username || m.sender.id;
-      const content = (m.content ?? "").trim();
-      // An attachment-only turn used to be filtered out entirely, which
-      // silently erased "user posted a screenshot" from the context.
-      const attachments = (m.attachments ?? [])
-        .map((a) => `[attachment: ${describeAttachment(a)} ${a.url}]`)
-        .join(" ");
-      const line = [content, attachments].filter(Boolean).join(" ");
-      return line ? `${sender}: ${line}` : "";
-    })
-    .filter(Boolean);
+  const lines = history.map(formatEntryLine).filter(Boolean);
   if (lines.length === 0) {
     return "";
   }
@@ -220,6 +251,7 @@ async function handleBinderWebhookRequest(
 
       const signatureHeader = req.headers["x-binder-signature"] as string | undefined;
       const timestampHeader = req.headers["x-binder-timestamp"];
+      const versionHeader = req.headers["x-binder-version"] as string | undefined;
 
       if (!signatureHeader) {
         res.statusCode = 401;
@@ -241,6 +273,15 @@ async function handleBinderWebhookRequest(
         res.statusCode = 401;
         res.end("invalid signature");
         return true;
+      }
+
+      // Only log when the contract moved past what we target — a quiet signal
+      // that this plugin may need updating, without a line per webhook.
+      const receivedVersion = versionHeader ? parseInt(versionHeader, 10) : NaN;
+      if (!isNaN(receivedVersion) && receivedVersion > TARGETED_BINDER_WEBHOOK_VERSION) {
+        target.runtime.log?.(
+          `[${target.account.accountId}] Binder webhook contract v${receivedVersion} is newer than the v${TARGETED_BINDER_WEBHOOK_VERSION} this plugin targets — see /docs/agents/webhook-changelog.md`,
+        );
       }
 
       let payload: BinderWebhookPayload;
@@ -362,13 +403,17 @@ async function processBinderEvent(
     : "";
   const cleanBody = [agentBody, mediaNote, attachmentNote].filter(Boolean).join(" ");
 
-  // The webhook only carries the single triggering message; `history` (when
-  // the Binder backend sends it) adds the recent thread turns from other
-  // senders that this bot's local session never saw. Prepended as plain
-  // context, not folded into RawBody/CommandBody so command parsing still
-  // sees only the actual trigger message.
+  // The webhook only carries the single triggering message; `thread_parent`
+  // (the thread's starting post) and `history` (the recent thread turns) add
+  // the context this bot's local session never saw. Both are prepended as
+  // plain context — topic anchor first, then recent turns — and are NOT folded
+  // into RawBody/CommandBody so command parsing still sees only the actual
+  // trigger message. On a v1 backend `thread_parent` is absent and the starting
+  // message arrives at the front of `history` instead; both paths degrade to
+  // empty strings, so the concatenation is safe either way.
+  const threadParentContext = isDm ? "" : formatThreadParentContext(data.thread_parent);
   const historyContext = isDm ? "" : formatHistoryContext(data.history);
-  const bodyWithContext = historyContext + cleanBody;
+  const bodyWithContext = threadParentContext + historyContext + cleanBody;
 
   const core = getBinderRuntime();
   if (!core) {
