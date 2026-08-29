@@ -37,7 +37,7 @@ Your owner is a person setting up an app, not an engineer reading logs. The setu
 2. **After finishing each step, send the Progress checklist** (template below). Never skip it.
 3. **Plain language only.** Never paste raw command output, JSON, or stack traces unless the owner asks. Translate errors into one plain sentence.
 4. **Separate your work from the owner's work.** Steps 1–5 are yours. Step 6 is always the owner's. Some steps may need the owner mid-way (e.g. installing a tunnel tool, logging in) — when that happens, say exactly what to do or click.
-5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner technical choices you can resolve yourself — e.g. do NOT ask which tunnel *tool* to use; check what's installed (`command -v cloudflared tailscale`) and pick one. Ask only when a step needs something only the owner has (an account login, a software install, a domain), after two failed attempts, or for a genuine product decision that outlives setup — currently exactly one: the temporary-vs-permanent tunnel question in Step 3.
+5. **Bias to action.** After the Kickoff is confirmed, proceed on your own. Never ask the owner technical choices you can resolve yourself — e.g. do NOT ask which tunnel *tool* to use; check what's installed (`command -v cloudflared tailscale`) and pick one. Ask only when a step needs something only the owner has (an account login, a software install, a domain), after two failed attempts, or for a genuine product decision that outlives setup — currently exactly two: the bot's name and username (Step 2), and the temporary-vs-permanent tunnel question (Step 3).
 6. **Two-strikes rule.** If the same step fails twice, STOP retrying. Send the Blocked message (template below): what's stuck in plain words, 2–3 options with a recommendation, and what you need from the owner. Never loop silently.
 7. **End every message with exactly one of:** "Next, I will …" or "I need you to …".
 8. **Never reveal secrets.** Do not echo `owner_token`, `token`, or `webhook_secret` to the owner or into chat logs. Refer to them as "your token" / "the bot's credentials". **`claim_url` and `claim_code` are NOT secrets** — they are the owner's own claim link, useless to anyone else, and the only way they can finish setup. Print the `claim_url` in full, exactly as returned, on its own line. Never redact, mask, shorten, or replace part of the code with `***` or `…`. A masked link is a broken link: if what you printed is not complete and clickable, print it again.
@@ -76,15 +76,17 @@ Here's the plan — 6 steps:
 🔲 5. Set up slash commands and scheduled chats (me)
 🔲 6. You add the bot to a group and say hi (you)
 
-I'm registering it as "<chosen name>" with the handle
-@<chosen-username>.ai — tell me any time if you want a
-different name and I'll change it.
+What name should I register under? I can propose one based on my
+persona if you'd like — but the name and @username (must end in
+.ai, e.g. @mybot.ai) are your call. No preference? Say "you pick"
+and I'll propose one you can change later.
 
 Next, I will install the plugin on my gateway.
 ```
 
-Announce the name, don't ask for it. Waiting on a name is the most
-common reason setup stalls, and renaming later is cheap.
+Ask for the name, don't pick it yourself. The name and username are
+the owner's decision; you may propose a default from your persona
+or their preferences, but wait for the answer before registering.
 
 **Progress** (after each completed step):
 
@@ -176,7 +178,7 @@ Then fetch the setup guide — Steps 2, 3 and 4c follow it:
 curl -s "${API_URL}/docs/agents/setup-guide.md"
 ```
 
-Choose a bot name + username yourself (must end in `.ai`; derive it from the gateway or the owner's handle). Send the **Kickoff** template and continue immediately — do not wait for a reply. If the owner names a different bot later, PATCH it.
+Ask the owner for the bot name + username (must end in `.ai`). If they have no preference, propose a default derived from your persona, the gateway, or the owner's handle — but wait for their answer before registering in Step 2. Send the **Kickoff** template, which asks for the name.
 
 **Retry?** If a previous attempt is visible in this conversation, skip the full Kickoff: verify actual state first (protocol rule 9), then send a **Progress** checklist reflecting verified state and continue from the first incomplete step. Don't re-ask questions the owner already answered (bot name, chosen options) — but do re-verify everything the machine controls.
 
