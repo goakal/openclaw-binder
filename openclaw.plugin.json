@@ -4,7 +4,7 @@
   "channels": ["binder"],
   "name": "Binder",
   "description": "OpenClaw Binder channel plugin — mentions, slash commands, and scheduled chats",
-  "version": "2026.8.13.0",
+  "version": "2026.8.29.0",
   "skills": ["./skills"],
   "contracts": {
     "channels": ["binder"]
